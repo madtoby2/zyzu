@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/madtoby2/zyzu/internal/config"
+	"github.com/madtoby2/zyzu/internal/content"
 	"github.com/madtoby2/zyzu/internal/poster"
 	"github.com/madtoby2/zyzu/internal/scraper"
 	"github.com/madtoby2/zyzu/internal/store"
@@ -19,6 +20,7 @@ type Scheduler struct {
 	Scraper *scraper.Scraper
 	Poster  *poster.Poster
 	Cfg     *config.Config
+	Agg     *content.Aggregator
 
 	mu        sync.Mutex
 	running   bool
@@ -26,6 +28,7 @@ type Scheduler struct {
 	lastError string
 	NewCount  int
 	UpdCount  int
+	ContentCount int
 }
 
 func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Config) *Scheduler {
@@ -39,41 +42,49 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 }
 
 func (s *Scheduler) Start() error {
-	_, err := s.cron.AddFunc(s.Cfg.ScrapeCron, s.run)
+	// Station monitoring job
+	_, err := s.cron.AddFunc(s.Cfg.ScrapeCron, s.runScrape)
 	if err != nil {
-		return fmt.Errorf("add cron: %w", err)
+		return fmt.Errorf("add scrape cron: %w", err)
 	}
+
+	// Content aggregation job
+	if s.Cfg.ContentCron != "" {
+		_, err := s.cron.AddFunc(s.Cfg.ContentCron, s.runContent)
+		if err != nil {
+			return fmt.Errorf("add content cron: %w", err)
+		}
+	}
+
 	s.cron.Start()
-	log.Printf("[scheduler] started with cron: %s", s.Cfg.ScrapeCron)
+	log.Printf("[scheduler] scrape=%s content=%s", s.Cfg.ScrapeCron, s.Cfg.ContentCron)
 	return nil
 }
 
-func (s *Scheduler) Stop() {
-	s.cron.Stop()
-}
+func (s *Scheduler) Stop() { s.cron.Stop() }
 
-func (s *Scheduler) RunNow() {
-	go s.run()
-}
+func (s *Scheduler) RunNow()          { go s.runScrape() }
+func (s *Scheduler) RunContentNow()   { go s.runContent() }
 
 func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return map[string]interface{}{
-		"running":    s.running,
-		"last_run":   s.lastRun,
-		"last_error": s.lastError,
-		"new_count":  s.NewCount,
-		"upd_count":  s.UpdCount,
-		"cron":       s.Cfg.ScrapeCron,
+		"running":       s.running,
+		"last_run":      s.lastRun,
+		"last_error":    s.lastError,
+		"new_count":     s.NewCount,
+		"upd_count":     s.UpdCount,
+		"content_count": s.ContentCount,
+		"cron_scrape":   s.Cfg.ScrapeCron,
+		"cron_content":  s.Cfg.ContentCron,
 	}
 }
 
-func (s *Scheduler) run() {
+func (s *Scheduler) runScrape() {
 	s.mu.Lock()
 	s.running = true
-	s.NewCount = 0
-	s.UpdCount = 0
+	s.NewCount, s.UpdCount = 0, 0
 	s.lastError = ""
 	s.mu.Unlock()
 
@@ -84,8 +95,7 @@ func (s *Scheduler) run() {
 		s.mu.Unlock()
 	}()
 
-	log.Println("[scheduler] starting scrape cycle...")
-
+	log.Println("[scheduler] scraping stations...")
 	stations, err := s.Scraper.ScrapeAll()
 	if err != nil {
 		s.mu.Lock()
@@ -95,17 +105,12 @@ func (s *Scheduler) run() {
 		return
 	}
 
-	log.Printf("[scheduler] scraped %d stations, processing...", len(stations))
-
 	for i := range stations {
 		st := &stations[i]
-
 		isNew, err := s.Store.UpsertStation(st)
 		if err != nil {
-			log.Printf("[scheduler] upsert %s error: %v", st.Slug, err)
 			continue
 		}
-
 		fullSt, err := s.Store.GetStationBySlug(st.Slug)
 		if err != nil || fullSt.Blacklisted {
 			continue
@@ -127,7 +132,6 @@ func (s *Scheduler) run() {
 			log.Printf("[scheduler] post %s error: %v", st.Name, err)
 			continue
 		}
-
 		s.Store.LogPost(fullSt.ID, action, msgID, st.Name)
 
 		s.mu.Lock()
@@ -138,9 +142,53 @@ func (s *Scheduler) run() {
 		}
 		s.mu.Unlock()
 
-		log.Printf("[scheduler] posted: %s (%s) msgID=%d", st.Name, action, msgID)
 		time.Sleep(2 * time.Second)
 	}
+	log.Printf("[scheduler] scrape done: %d new, %d updated", s.NewCount, s.UpdCount)
+}
 
-	log.Printf("[scheduler] cycle done: %d new, %d updated", s.NewCount, s.UpdCount)
+func (s *Scheduler) runContent() {
+	log.Println("[scheduler] fetching content...")
+
+	// Get top 5 fastest active sources
+	sources, err := content.GetActiveSources(s.Store, 5)
+	if err != nil {
+		log.Printf("[scheduler] get sources error: %v", err)
+		return
+	}
+
+	if len(sources) == 0 {
+		log.Println("[scheduler] no active sources")
+		return
+	}
+
+	s.Agg = content.New(sources)
+	items, err := s.Agg.FetchLatest()
+	if err != nil {
+		log.Printf("[scheduler] content fetch error: %v", err)
+		return
+	}
+
+	if len(items) == 0 {
+		log.Println("[scheduler] no new content")
+		return
+	}
+
+	// Take top N
+	if len(items) > 20 {
+		items = items[:20]
+	}
+
+	title := fmt.Sprintf("📺 今日更新精选 · %s", time.Now().Format("01/02 15:04"))
+	msgID, err := s.Poster.PostContentDigest(items, title)
+	if err != nil {
+		log.Printf("[scheduler] post digest error: %v", err)
+		return
+	}
+
+	s.mu.Lock()
+	s.ContentCount = len(items)
+	s.mu.Unlock()
+
+	log.Printf("[scheduler] content posted: %d items, msgID=%d", len(items), msgID)
 }

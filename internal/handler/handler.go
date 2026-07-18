@@ -30,6 +30,7 @@ func (h *Handler) Register(r chi.Router) {
 	r.Post("/api/stations/{slug}/post", h.manualPost)
 	r.Get("/api/history", h.getHistory)
 	r.Post("/api/trigger", h.triggerScrape)
+	r.Post("/api/content/trigger", h.triggerContent)
 	r.Get("/api/config", h.getConfig)
 	r.Put("/api/config", h.updateConfig)
 	r.Get("/api/status", h.getStatus)
@@ -115,13 +116,20 @@ func (h *Handler) triggerScrape(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "scrape started"})
 }
 
+func (h *Handler) triggerContent(w http.ResponseWriter, r *http.Request) {
+	h.sched.RunContentNow()
+	h.hub.Broadcast("content_triggered", map[string]string{"status": "started"})
+	jsonOK(w, map[string]string{"status": "content fetch started"})
+}
+
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	safe := map[string]interface{}{
-		"scrape_cron": h.cfg.ScrapeCron,
-		"listen_addr": h.cfg.ListenAddr,
-		"channel_id":  h.cfg.ChannelID,
-		"post_format": h.cfg.PostFormat,
-		"bot_token":   maskToken(h.cfg.BotToken),
+		"scrape_cron":  h.cfg.ScrapeCron,
+		"content_cron": h.cfg.ContentCron,
+		"listen_addr":  h.cfg.ListenAddr,
+		"channel_id":   h.cfg.ChannelID,
+		"post_format":  h.cfg.PostFormat,
+		"bot_token":    maskToken(h.cfg.BotToken),
 	}
 	jsonOK(w, safe)
 }
@@ -134,6 +142,9 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["scrape_cron"]; ok {
 		h.cfg.ScrapeCron = v.(string)
+	}
+	if v, ok := body["content_cron"]; ok {
+		h.cfg.ContentCron = v.(string)
 	}
 	if v, ok := body["post_format"]; ok {
 		h.cfg.PostFormat = v.(string)

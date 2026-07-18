@@ -6,17 +6,19 @@ import (
 )
 
 type Config struct {
-	BotToken   string `json:"bot_token"`
-	ChannelID  int64  `json:"channel_id"`
-	ScrapeCron string `json:"scrape_cron"` // e.g. "0 */6 * * *"
-	ListenAddr string `json:"listen_addr"` // e.g. ":8080"
-	PostFormat string `json:"post_format"` // template for TG posts
+	BotToken    string `json:"bot_token"`
+	ChannelID   int64  `json:"channel_id"`
+	ScrapeCron  string `json:"scrape_cron"`
+	ContentCron string `json:"content_cron"` // e.g. "0 8,20 * * *"
+	ListenAddr  string `json:"listen_addr"`
+	PostFormat  string `json:"post_format"`
 }
 
 func Default() *Config {
 	return &Config{
-		ScrapeCron: "0 */6 * * *",
-		ListenAddr: ":8080",
+		ScrapeCron:  "0 */6 * * *",
+		ContentCron: "0 8,20 * * *",
+		ListenAddr:  ":8080",
 		PostFormat: `📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}
 🏷 {tags}
 🔗 ` + "`{api_url}`",
