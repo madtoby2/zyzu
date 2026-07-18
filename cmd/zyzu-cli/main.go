@@ -8,60 +8,129 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
-var (
-	serverURL string
-	apiKey    string
-)
+type Profile struct {
+	Name   string `json:"name"`
+	Server string `json:"server"`
+	Key    string `json:"key"`
+}
+
+type ConfigFile struct {
+	Active  string    `json:"active"`
+	Profiles []Profile `json:"profiles"`
+}
+
+var cfg ConfigFile
+
+func configPath() string {
+	dir, _ := os.UserConfigDir()
+	return filepath.Join(dir, "zyzu.json")
+}
+
+func loadConfig() {
+	data, err := os.ReadFile(configPath())
+	if err == nil {
+		json.Unmarshal(data, &cfg)
+	}
+}
+
+func saveConfig() {
+	os.MkdirAll(filepath.Dir(configPath()), 0755)
+	data, _ := json.MarshalIndent(cfg, "", "  ")
+	os.WriteFile(configPath(), data, 0644)
+}
+
+func activeProfile() *Profile {
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].Name == cfg.Active {
+			return &cfg.Profiles[i]
+		}
+	}
+	return nil
+}
 
 func main() {
+	loadConfig()
+
 	if len(os.Args) < 2 {
 		usage()
 		return
 	}
 
-	serverURL = os.Getenv("ZYZU_SERVER")
+	// Override from env if no profiles exist
+	p := activeProfile()
+	serverURL := os.Getenv("ZYZU_SERVER")
+	apiKey := os.Getenv("ZYZU_KEY")
+	if p != nil {
+		if serverURL == "" {
+			serverURL = p.Server
+		}
+		if apiKey == "" {
+			apiKey = p.Key
+		}
+	}
 	if serverURL == "" {
 		serverURL = "http://localhost:8080"
 	}
-	apiKey = os.Getenv("ZYZU_KEY")
 
 	cmd := os.Args[1]
 	switch cmd {
 	case "login":
 		cmdLogin()
+		return
+	case "use":
+		if len(os.Args) < 3 {
+			fmt.Println("usage: zyzu-cli use <profile-name>")
+			listProfiles()
+			return
+		}
+		cmdUse(os.Args[2])
+		return
+	case "profiles":
+		listProfiles()
+		return
+	}
+
+	// All other commands need a server connection
+	if p == nil && serverURL == "http://localhost:8080" && apiKey == "" {
+		fmt.Println("未配置服务器。请先运行: zyzu-cli login")
+		return
+	}
+
+	switch cmd {
 	case "list":
-		cmdList()
+		cmdList(serverURL, apiKey)
 	case "stats":
-		cmdStats()
+		cmdStats(serverURL, apiKey)
 	case "block":
 		if len(os.Args) < 3 {
 			fmt.Println("usage: zyzu-cli block <slug>")
 			return
 		}
-		cmdBlock(os.Args[2], true)
+		cmdBlock(serverURL, apiKey, os.Args[2], true)
 	case "unblock":
 		if len(os.Args) < 3 {
 			fmt.Println("usage: zyzu-cli unblock <slug>")
 			return
 		}
-		cmdBlock(os.Args[2], false)
+		cmdBlock(serverURL, apiKey, os.Args[2], false)
 	case "post":
 		if len(os.Args) < 3 {
 			fmt.Println("usage: zyzu-cli post <slug>")
 			return
 		}
-		cmdPost(os.Args[2])
+		cmdPost(serverURL, apiKey, os.Args[2])
 	case "trigger":
-		cmdTrigger()
+		cmdTrigger(serverURL, apiKey)
 	case "content":
-		cmdContent()
+		cmdContent(serverURL, apiKey)
 	case "status":
-		cmdStatus()
+		cmdStatus(serverURL, apiKey)
 	case "history":
-		cmdHistory()
+		cmdHistory(serverURL, apiKey)
 	default:
 		usage()
 	}
@@ -71,7 +140,9 @@ func usage() {
 	fmt.Println(`zyzu-cli — 资源组 TG频道管理客户端
 
 用法:
-  zyzu-cli login              设置服务器地址和API Key
+  zyzu-cli login              添加/修改服务器配置
+  zyzu-cli use <name>          切换当前服务器
+  zyzu-cli profiles            列出所有配置
   zyzu-cli list                列出所有资源站
   zyzu-cli stats               统计信息
   zyzu-cli block <slug>        屏蔽某站
@@ -83,43 +154,91 @@ func usage() {
   zyzu-cli history             推送历史
 
 环境变量:
-  ZYZU_SERVER  服务器地址 (默认 http://localhost:8080)
-  ZYZU_KEY     API Key`)
+  ZYZU_SERVER  服务器地址 (覆盖配置文件)
+  ZYZU_KEY     API Key (覆盖配置文件)`)
 }
 
 func cmdLogin() {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Server URL [http://localhost:8080]: ")
+	fmt.Print("配置名称 [default]: ")
+	name, _ := reader.ReadString('\n')
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "default"
+	}
+
+	fmt.Print("Server URL: ")
 	url, _ := reader.ReadString('\n')
 	url = strings.TrimSpace(url)
-	if url != "" {
-		serverURL = url
-	}
+
 	fmt.Print("API Key: ")
 	key, _ := reader.ReadString('\n')
-	apiKey = strings.TrimSpace(key)
+	key = strings.TrimSpace(key)
 
 	// Test connection
-	resp, err := apiGet("/health")
+	resp, err := http.Get(url + "/health")
 	if err != nil {
 		fmt.Printf("连接失败: %v\n", err)
 		return
 	}
-	fmt.Printf("✓ 已连接 %s (HTTP %d)\n", serverURL, resp.StatusCode)
-	fmt.Printf("export ZYZU_SERVER=%s\n", serverURL)
-	fmt.Printf("export ZYZU_KEY=%s\n", apiKey)
+	resp.Body.Close()
+
+	// Save profile
+	found := false
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].Name == name {
+			cfg.Profiles[i].Server = url
+			cfg.Profiles[i].Key = key
+			found = true
+			break
+		}
+	}
+	if !found {
+		cfg.Profiles = append(cfg.Profiles, Profile{Name: name, Server: url, Key: key})
+	}
+	cfg.Active = name
+	saveConfig()
+
+	fmt.Printf("✓ 已保存 [%s] → %s\n", name, url)
 }
 
-func cmdList() {
-	var resp struct {
-		OK   bool            `json:"ok"`
-		Data []stationBrief   `json:"data"`
+func cmdUse(name string) {
+	for _, p := range cfg.Profiles {
+		if p.Name == name {
+			cfg.Active = name
+			saveConfig()
+			fmt.Printf("✓ 当前服务器: [%s] %s\n", name, p.Server)
+			return
+		}
 	}
-	if err := apiGetJSON("/api/stations?all=1", &resp); err != nil {
+	fmt.Printf("未找到配置: %s\n", name)
+	listProfiles()
+}
+
+func listProfiles() {
+	if len(cfg.Profiles) == 0 {
+		fmt.Println("暂无配置，请运行: zyzu-cli login")
+		return
+	}
+	for _, p := range cfg.Profiles {
+		mark := " "
+		if p.Name == cfg.Active {
+			mark = "*"
+		}
+		fmt.Printf(" %s %-12s %s\n", mark, p.Name, p.Server)
+	}
+}
+
+func cmdList(server, key string) {
+	var resp struct {
+		OK   bool           `json:"ok"`
+		Data []stationBrief `json:"data"`
+	}
+	if err := apiGetJSON(server, key, "/api/stations?all=1", &resp); err != nil {
 		fmt.Println("错误:", err)
 		return
 	}
-	fmt.Printf("%-4s %-18s %-8s %-6s %-6s %s\n", "ID", "名称", "资源量", "可用率", "响应", "标签")
+	fmt.Printf("%-4s %-18s %-8s %-6s %-6s %s\n", "ID", "名称", "资源量", "可用率", "响应", "Slug")
 	for _, s := range resp.Data {
 		mark := " "
 		if s.Blacklisted {
@@ -129,39 +248,39 @@ func cmdList() {
 	}
 }
 
-func cmdStats() {
+func cmdStats(server, key string) {
 	var resp struct {
-		OK   bool              `json:"ok"`
+		OK   bool                   `json:"ok"`
 		Data map[string]interface{} `json:"data"`
 	}
-	apiGetJSON("/api/stations/stats", &resp)
+	apiGetJSON(server, key, "/api/stations/stats", &resp)
 	fmt.Printf("总站点: %.0f  已屏蔽: %.0f  已推送: %.0f\n",
 		resp.Data["total"], resp.Data["blacklisted"], resp.Data["posted"])
 }
 
-func cmdBlock(slug string, blocked bool) {
+func cmdBlock(server, key, slug string, blocked bool) {
 	action := "屏蔽"
 	if !blocked {
 		action = "解除"
 	}
 	var resp map[string]interface{}
 	body := map[string]bool{"blacklisted": blocked}
-	if err := apiPostJSON("/api/stations/"+slug+"/blacklist", body, &resp); err != nil {
+	if err := apiPostJSON(server, key, "/api/stations/"+slug+"/blacklist", body, &resp); err != nil {
 		fmt.Printf("%s失败: %v\n", action, err)
 		return
 	}
 	fmt.Printf("✓ 已%s: %s\n", action, slug)
 }
 
-func cmdPost(slug string) {
+func cmdPost(server, key, slug string) {
 	var resp struct {
-		OK   bool `json:"ok"`
-		Data struct {
+		OK    bool   `json:"ok"`
+		Data  struct {
 			MessageID int `json:"message_id"`
 		} `json:"data"`
 		Error string `json:"error"`
 	}
-	apiPostJSON("/api/stations/"+slug+"/post", nil, &resp)
+	apiPostJSON(server, key, "/api/stations/"+slug+"/post", nil, &resp)
 	if resp.OK {
 		fmt.Printf("✓ 已推送到TG, MSG #%d\n", resp.Data.MessageID)
 	} else {
@@ -169,22 +288,28 @@ func cmdPost(slug string) {
 	}
 }
 
-func cmdTrigger() {
-	apiPost("/api/trigger")
+func cmdTrigger(server, key string) {
+	if err := apiPost(server, key, "/api/trigger"); err != nil {
+		fmt.Println("失败:", err)
+		return
+	}
 	fmt.Println("✓ 采集已触发")
 }
 
-func cmdContent() {
-	apiPost("/api/content/trigger")
+func cmdContent(server, key string) {
+	if err := apiPost(server, key, "/api/content/trigger"); err != nil {
+		fmt.Println("失败:", err)
+		return
+	}
 	fmt.Println("✓ 内容抓取已触发")
 }
 
-func cmdStatus() {
+func cmdStatus(server, key string) {
 	var resp struct {
-		OK   bool              `json:"ok"`
+		OK   bool                   `json:"ok"`
 		Data map[string]interface{} `json:"data"`
 	}
-	apiGetJSON("/api/status", &resp)
+	apiGetJSON(server, key, "/api/status", &resp)
 	d := resp.Data
 	fmt.Printf("调度: running=%v  last_run=%v\n", d["running"], d["last_run"])
 	fmt.Printf("站: new=%v updated=%v | 内容: %v\n", d["new_count"], d["upd_count"], d["content_count"])
@@ -194,12 +319,12 @@ func cmdStatus() {
 	}
 }
 
-func cmdHistory() {
+func cmdHistory(server, key string) {
 	var resp struct {
 		OK   bool      `json:"ok"`
-		Data []postLog  `json:"data"`
+		Data []postLog `json:"data"`
 	}
-	apiGetJSON("/api/history", &resp)
+	apiGetJSON(server, key, "/api/history", &resp)
 	fmt.Printf("%-20s %-20s %-8s %s\n", "时间", "站点", "动作", "MSG ID")
 	for _, h := range resp.Data {
 		fmt.Printf("%-20s %-20s %-8s %d\n", h.PostedAt[:19], h.Content, h.Action, h.MessageID)
@@ -225,16 +350,16 @@ type postLog struct {
 	MessageID int    `json:"message_id"`
 }
 
-func apiGet(path string) (*http.Response, error) {
-	req, _ := http.NewRequest("GET", serverURL+path, nil)
-	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
+func apiGet(server, key, path string) (*http.Response, error) {
+	req, _ := http.NewRequest("GET", server+path, nil)
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
 	}
 	return http.DefaultClient.Do(req)
 }
 
-func apiGetJSON(path string, v interface{}) error {
-	resp, err := apiGet(path)
+func apiGetJSON(server, key, path string, v interface{}) error {
+	resp, err := apiGet(server, key, path)
 	if err != nil {
 		return err
 	}
@@ -242,10 +367,10 @@ func apiGetJSON(path string, v interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-func apiPost(path string) error {
-	req, _ := http.NewRequest("POST", serverURL+path, nil)
-	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
+func apiPost(server, key, path string) error {
+	req, _ := http.NewRequest("POST", server+path, nil)
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -255,16 +380,16 @@ func apiPost(path string) error {
 	return nil
 }
 
-func apiPostJSON(path string, body interface{}, v interface{}) error {
+func apiPostJSON(server, key, path string, body interface{}, v interface{}) error {
 	var r io.Reader
 	if body != nil {
 		data, _ := json.Marshal(body)
 		r = bytes.NewReader(data)
 	}
-	req, _ := http.NewRequest("POST", serverURL+path, r)
+	req, _ := http.NewRequest("POST", server+path, r)
 	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
