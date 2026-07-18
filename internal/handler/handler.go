@@ -124,12 +124,14 @@ func (h *Handler) triggerContent(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	safe := map[string]interface{}{
-		"scrape_cron":  h.cfg.ScrapeCron,
-		"content_cron": h.cfg.ContentCron,
-		"listen_addr":  h.cfg.ListenAddr,
-		"channel_id":   h.cfg.ChannelID,
-		"post_format":  h.cfg.PostFormat,
-		"bot_token":    maskToken(h.cfg.BotToken),
+		"scrape_cron":   h.cfg.ScrapeCron,
+		"content_cron":  h.cfg.ContentCron,
+		"content_mode":  h.cfg.ContentMode,
+		"content_limit": h.cfg.ContentLimit,
+		"listen_addr":   h.cfg.ListenAddr,
+		"channel_id":    h.cfg.ChannelID,
+		"post_format":   h.cfg.PostFormat,
+		"bot_token":     maskToken(h.cfg.BotToken),
 	}
 	jsonOK(w, safe)
 }
@@ -145,6 +147,15 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["content_cron"]; ok {
 		h.cfg.ContentCron = v.(string)
+	}
+	if v, ok := body["content_mode"]; ok {
+		h.cfg.ContentMode = v.(string)
+	}
+	if v, ok := body["content_limit"]; ok {
+		switch val := v.(type) {
+		case float64:
+			h.cfg.ContentLimit = int(val)
+		}
 	}
 	if v, ok := body["post_format"]; ok {
 		h.cfg.PostFormat = v.(string)

@@ -150,13 +150,11 @@ func (s *Scheduler) runScrape() {
 func (s *Scheduler) runContent() {
 	log.Println("[scheduler] fetching content...")
 
-	// Get top 5 fastest active sources
 	sources, err := content.GetActiveSources(s.Store, 5)
 	if err != nil {
 		log.Printf("[scheduler] get sources error: %v", err)
 		return
 	}
-
 	if len(sources) == 0 {
 		log.Println("[scheduler] no active sources")
 		return
@@ -168,27 +166,44 @@ func (s *Scheduler) runContent() {
 		log.Printf("[scheduler] content fetch error: %v", err)
 		return
 	}
-
 	if len(items) == 0 {
 		log.Println("[scheduler] no new content")
 		return
 	}
 
-	// Take top N
-	if len(items) > 20 {
-		items = items[:20]
+	limit := s.Cfg.ContentLimit
+	if limit <= 0 {
+		limit = 10
+	}
+	if len(items) > limit {
+		items = items[:limit]
 	}
 
-	title := fmt.Sprintf("📺 今日更新精选 · %s", time.Now().Format("01/02 15:04"))
-	msgID, err := s.Poster.PostContentDigest(items, title)
+	var posted int
+	mode := s.Cfg.ContentMode
+	if mode == "" {
+		mode = "split"
+	}
+
+	if mode == "digest" {
+		title := fmt.Sprintf("📺 今日更新精选 · %s", time.Now().Format("01/02 15:04"))
+		_, err = s.Poster.PostContentDigest(items, title)
+		if err == nil {
+			posted = len(items)
+		}
+	} else {
+		// split mode: individual photo posts
+		posted, err = s.Poster.PostContentSplit(items)
+	}
+
 	if err != nil {
-		log.Printf("[scheduler] post digest error: %v", err)
+		log.Printf("[scheduler] content post error: %v", err)
 		return
 	}
 
 	s.mu.Lock()
-	s.ContentCount = len(items)
+	s.ContentCount = posted
 	s.mu.Unlock()
 
-	log.Printf("[scheduler] content posted: %d items, msgID=%d", len(items), msgID)
+	log.Printf("[scheduler] content posted: %d items (mode=%s)", posted, mode)
 }

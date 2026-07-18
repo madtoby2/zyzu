@@ -3,6 +3,8 @@
   "channel_id": -1001234567890,
   "scrape_cron": "0 */6 * * *",
   "content_cron": "0 8,20 * * *",
+  "content_mode": "split",
+  "content_limit": 10,
   "listen_addr": ":8080",
   "post_format": "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`"
 }

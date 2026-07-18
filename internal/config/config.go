@@ -9,16 +9,20 @@ type Config struct {
 	BotToken    string `json:"bot_token"`
 	ChannelID   int64  `json:"channel_id"`
 	ScrapeCron  string `json:"scrape_cron"`
-	ContentCron string `json:"content_cron"` // e.g. "0 8,20 * * *"
+	ContentCron string `json:"content_cron"`
 	ListenAddr  string `json:"listen_addr"`
 	PostFormat  string `json:"post_format"`
+	ContentMode string `json:"content_mode"` // "digest" or "split"
+	ContentLimit int   `json:"content_limit"` // max items per run
 }
 
 func Default() *Config {
 	return &Config{
-		ScrapeCron:  "0 */6 * * *",
-		ContentCron: "0 8,20 * * *",
-		ListenAddr:  ":8080",
+		ScrapeCron:   "0 */6 * * *",
+		ContentCron:  "0 8,20 * * *",
+		ListenAddr:   ":8080",
+		ContentMode:  "split",
+		ContentLimit: 10,
 		PostFormat: `📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}
 🏷 {tags}
 🔗 ` + "`{api_url}`",
