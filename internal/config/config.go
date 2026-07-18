@@ -19,7 +19,7 @@ type Config struct {
 
 func Default() *Config {
 	return &Config{
-		ScrapeCron:   "0 */6 * * *",
+		ScrapeCron:   "0 0 */6 * * *",
 		ContentCron:  "0 8,20 * * *",
 		ListenAddr:   ":8080",
 		ContentMode:  "video",

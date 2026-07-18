@@ -69,7 +69,7 @@ func (s *Store) migrate() error {
 		blacklisted INTEGER DEFAULT 0,
 		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-		last_posted DATETIME DEFAULT 0
+		last_posted DATETIME DEFAULT NULL
 	);
 	CREATE TABLE IF NOT EXISTS post_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
