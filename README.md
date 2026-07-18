@@ -27,7 +27,7 @@ docker compose up -d
 go run ./cmd/zyzu/
 ```
 
-访问 `http://localhost:8080` 打开控制台。
+访问 `http://your-vps-ip:8080` 打开控制台。
 
 ## 配置
 
