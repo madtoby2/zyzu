@@ -2,158 +2,184 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZYZU 控制台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ZYZU Client</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-body{background:#0d0d14;color:#ccc;padding:16px;max-width:1100px;margin:0 auto}
-h1{font-size:20px;color:#ec4899;margin-bottom:4px}
-.sub{font-size:12px;color:#555;margin-bottom:16px}
+body{background:#0a0a10;color:#ccc;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-box{background:#12121e;border:1px solid #222;border-radius:14px;padding:32px;width:380px;max-width:90vw}
+.login-box h1{font-size:22px;color:#ec4899;margin-bottom:4px;text-align:center}
+.login-box .sub{font-size:12px;color:#444;text-align:center;margin-bottom:24px}
+.login-box label{display:block;font-size:12px;color:#666;margin-bottom:4px;margin-top:14px}
+.login-box input{width:100%;padding:10px 12px;background:#0a0a10;border:1px solid #333;border-radius:8px;color:#ccc;font-size:14px}
+.login-box input:focus{outline:none;border-color:#ec4899}
+.login-box .err{color:#ef4444;font-size:12px;margin-top:6px;display:none}
+.login-box .btn{width:100%;padding:10px;margin-top:18px;background:#ec4899;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+.login-box .btn:hover{background:#db2777}
+.saved{margin-top:12px;font-size:12px;color:#333}
+.saved span{cursor:pointer;color:#555;margin-right:12px}
+.saved span:hover{color:#ec4899}
+.app{max-width:1200px;margin:0 auto;padding:16px;width:100%;display:none}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1a1a2a}
+.topbar h1{font-size:18px;color:#ec4899}.topbar .server{font-size:11px;color:#444}
+.topbar button{background:none;border:1px solid #333;color:#666;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.card{background:#161622;border:1px solid #222;border-radius:10px;padding:14px;text-align:center}
-.card .n{font-size:26px;font-weight:700;color:#fff}
-.card .l{font-size:11px;color:#666;margin-top:2px}
-.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.toolbar input,.toolbar select{flex:1;min-width:120px;padding:7px 10px;background:#161622;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px}
+.card{background:#12121e;border:1px solid #222;border-radius:10px;padding:14px;text-align:center}
+.card .n{font-size:26px;font-weight:700}
+.card .l{font-size:11px;color:#555;margin-top:2px}
+.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.toolbar input{flex:1;min-width:140px;padding:7px 10px;background:#12121e;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px}
 .toolbar input:focus{outline:none;border-color:#ec4899}
 .btn{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
 .btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
 .btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
 .btn-r{background:#ef4444;color:#fff}.btn-r:hover{background:#dc2626}
-.btn-o{background:transparent;border:1px solid #444;color:#aaa}.btn-o:hover{background:#222;color:#fff}
-.tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #222}
-.tab{background:none;border:none;color:#666;padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent}
+.btn-o{background:transparent;border:1px solid #444;color:#aaa;font-size:11px;padding:4px 8px}.btn-o:hover{background:#1a1a2a;color:#fff}
+.tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #1a1a2a}
+.tab{background:none;border:none;color:#555;padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent}
 .tab.active{color:#ec4899;border-bottom-color:#ec4899}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px 10px;background:#161622;border-bottom:1px solid #222;color:#666;font-weight:600}
-td{padding:7px 10px;border-bottom:1px solid #161622}
-tr:hover td{background:#1a1a28}
-.blocked{opacity:.4}
-.green{color:#10b981}.red{color:#ef4444}.yellow{color:#f59e0b}
-.config-form{background:#161622;border:1px solid #222;border-radius:10px;padding:16px}
-.config-form label{display:block;margin-bottom:10px;font-size:12px;color:#888}
-.config-form input,.config-form textarea{width:100%;margin-top:3px;padding:7px 10px;background:#0d0d14;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px;font-family:monospace}
-.config-form textarea{resize:vertical;min-height:80px}
-.log{background:#0d0d14;border:1px solid #222;border-radius:10px;padding:12px;max-height:300px;overflow-y:auto;font-size:12px;font-family:monospace}
-.log .ts{color:#666}.log .info{color:#aaa}.log .ok{color:#10b981}.log .err{color:#ef4444}
+th{text-align:left;padding:8px 10px;background:#12121e;border-bottom:1px solid #1a1a2a;color:#555;font-weight:600;position:sticky;top:0}
+td{padding:7px 10px;border-bottom:1px solid #12121e}
+tr:hover td{background:#16162a}
+.blocked{opacity:.35}
+.green{color:#10b981}.red{color:#ef4444}
+.config-form{background:#12121e;border:1px solid #222;border-radius:10px;padding:16px}
+.config-form label{display:block;margin-bottom:10px;font-size:12px;color:#777}
+.config-form input,.config-form textarea,.config-form select{width:100%;margin-top:3px;padding:7px 10px;background:#0a0a10;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px;font-family:monospace}
+.config-form textarea{resize:vertical;min-height:100px}
+.log-box{background:#0a0a10;border:1px solid #1a1a2a;border-radius:10px;padding:12px;max-height:320px;overflow-y:auto;font-size:12px;font-family:monospace}
+.log-box .ts{color:#444}.log-box .ok{color:#10b981}.log-box .err{color:#ef4444}.log-box .info{color:#888}
 .hidden{display:none}
-.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px}
-.b-adult{background:#ef444422;color:#ef4444}
-.b-movie{background:#3b82f622;color:#3b82f6}
-.b-anime{background:#8b5cf622;color:#8b5cf6}
-.b-default{background:#6663;color:#999}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
-
-<h1>📡 ZYZU 控制台</h1>
-<div class="sub" id="conn-status">连接中...</div>
-
-<div class="grid">
-  <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
-  <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽</div></div>
-  <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送</div></div>
-  <div class="card"><div class="n" id="s-running">-</div><div class="l">调度状态</div></div>
+<div class="login-box" id="login">
+  <h1>📡 ZYZU Client</h1>
+  <div class="sub">连接到 zyzu server</div>
+  <label>服务器地址</label>
+  <input id="login-server" placeholder="http://your-vps:8080" value="" autofocus>
+  <label>API Key</label>
+  <input id="login-key" placeholder="your-api-key">
+  <div class="err" id="login-err"></div>
+  <button class="btn" onclick="doLogin()">连接</button>
+  <div class="saved" id="saved-list"></div>
 </div>
 
-<div class="toolbar">
-  <input id="search" placeholder="搜索站名/API..." oninput="render()">
-  <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap">
-    <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽
-  </label>
-  <button class="btn btn-p" onclick="api('/api/trigger','POST')">🔄 采集</button>
-  <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">🎬 抓内容</button>
-</div>
-
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('stations')">资源站</button>
-  <button class="tab" onclick="switchTab('channels')">频道管理</button>
-  <button class="tab" onclick="switchTab('config')">配置</button>
-  <button class="tab" onclick="switchTab('log')">日志</button>
-</div>
-
-<div id="tab-stations"><table><thead><tr><th>名称</th><th>分类</th><th>资源量</th><th>可用率</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
-
-<div id="tab-channels" class="hidden">
-  <div class="config-form">
-    <label>频道映射 (JSON格式: {"分类": [频道ID数组]})
-      <textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea>
-    </label>
-    <button class="btn btn-p" onclick="saveChannels()">保存频道配置</button>
+<div class="app" id="app">
+  <div class="topbar">
+    <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
+    <button onclick="logout()">断开</button>
   </div>
-</div>
-
-<div id="tab-config" class="hidden">
-  <div class="config-form">
-    <label>Bot Token <input id="cfg-token"></label>
-    <label>采集Cron <input id="cfg-scrape" placeholder="0 0 */6 * * *"></label>
-    <label>内容Cron <input id="cfg-content-cron" placeholder="0 8,20 * * *"></label>
-    <label>内容模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
-    <label>每次条数 <input id="cfg-limit" type="number" value="10"></label>
-    <button class="btn btn-p" onclick="saveConfig()">保存配置</button>
+  <div class="grid">
+    <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
+    <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽</div></div>
+    <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送</div></div>
+    <div class="card"><div class="n" id="s-running">-</div><div class="l">调度</div></div>
   </div>
-</div>
-
-<div id="tab-log" class="hidden">
-  <div class="log" id="log-box"></div>
+  <div class="toolbar">
+    <input id="search" placeholder="搜索站名/API..." oninput="render()">
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
+      <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽</label>
+    <button class="btn btn-p" onclick="api('/api/trigger','POST')">🔄 采集</button>
+    <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">🎬 抓内容</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('stations')">资源站</button>
+    <button class="tab" onclick="switchTab('channels')">频道</button>
+    <button class="tab" onclick="switchTab('config')">配置</button>
+    <button class="tab" onclick="switchTab('log')">日志</button>
+  </div>
+  <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
+  <div id="tab-channels" class="hidden">
+    <div class="config-form">
+      <label>频道映射 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
+      <button class="btn btn-p" onclick="saveChannels()">保存</button>
+    </div>
+  </div>
+  <div id="tab-config" class="hidden">
+    <div class="config-form">
+      <label>Bot Token<input id="cfg-token"></label>
+      <label>采集 Cron<input id="cfg-scrape"></label>
+      <label>内容 Cron<input id="cfg-content-cron"></label>
+      <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
+      <label>条数<input id="cfg-limit" type="number" value="10"></label>
+      <button class="btn btn-p" onclick="saveConfig()">保存</button>
+    </div>
+  </div>
+  <div id="tab-log" class="hidden"><div class="log-box" id="log-el"></div></div>
 </div>
 
 <script>
-let stations=[],config={},ws;
+let server='',key='',stations=[],ws;
+const LS='zyzu_profiles';
 
-async function init(){
-  await Promise.all([loadStats(),loadStations(),loadConfig()]);
-  render();
-  connectWS();
+function init(){
+  const saved=JSON.parse(localStorage.getItem(LS)||'[]');
+  const el=document.getElementById('saved-list');
+  if(saved.length){
+    el.innerHTML='已保存: '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
+  }
+  const last=JSON.parse(localStorage.getItem('zyzu_last')||'null');
+  if(last){document.getElementById('login-server').value=last.server;document.getElementById('login-key').value=last.key;}
 }
+async function doLogin(){
+  const s=document.getElementById('login-server').value.trim();
+  const k=document.getElementById('login-key').value.trim();
+  if(!s){showErr('请输入服务器地址');return}
+  server=s;key=k;
+  try{
+    const r=await fetch(server+'/health');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+  }catch(e){showErr('连接失败: '+e.message);return}
+  const saved=JSON.parse(localStorage.getItem(LS)||'[]');
+  const name=server.replace(/https?:\/\//,'').split(':')[0];
+  const exists=saved.findIndex(p=>p.server===server);
+  if(exists>=0)saved.splice(exists,1);
+  saved.unshift({name,server,key:k});if(saved.length>5)saved.length=5;
+  localStorage.setItem(LS,JSON.stringify(saved));
+  localStorage.setItem('zyzu_last',JSON.stringify({server,k}));
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('app-server').textContent=server;
+  await Promise.all([loadStats(),loadStations(),loadConfig()]);render();connectWS();
+}
+function fillLogin(s,k){
+  document.getElementById('login-server').value=s;
+  document.getElementById('login-key').value=k||'';
+}
+function logout(){
+  if(ws)ws.close();
+  document.getElementById('login').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+function showErr(m){const e=document.getElementById('login-err');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 async function loadStats(){
-  const r=await fetch('/api/stations/stats').then(r=>r.json());
-  if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted;}
-  const s=await fetch('/api/status').then(r=>r.json());
-  if(s.ok)document.getElementById('s-running').textContent=s.data.running?'运行中':'空闲';
+  try{const r=await fetch(server+'/api/stations/stats').then(r=>r.json());if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted}
+  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok)document.getElementById('s-running').textContent=s.data.running?'运行中':'空闲'}catch(e){}
 }
 async function loadStations(){
-  const r=await fetch('/api/stations?all=1').then(r=>r.json());
-  if(r.ok)stations=r.data;
+  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data}catch(e){}
 }
 async function loadConfig(){
-  const r=await fetch('/api/config',{headers:{'X-API-Key':''}}).then(r=>r.json());
-  if(r.ok&&r.data){
-    config=r.data;
-    document.getElementById('cfg-token').value=config.bot_token||'';
-    document.getElementById('cfg-scrape').value=config.scrape_cron||'';
-    document.getElementById('cfg-content-cron').value=config.content_cron||'';
-    document.getElementById('cfg-mode').value=config.content_mode||'video';
-    document.getElementById('cfg-limit').value=config.content_limit||10;
-    if(config.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:config.channel_ids});
-  }
+  try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
+  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
+  if(c.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:c.channel_ids},null,2)}}catch(e){}
 }
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
-  const tbody=document.getElementById('station-list');
-  tbody.innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||s.api_url.toLowerCase().includes(q))).map(s=>`
-    <tr class="${s.blacklisted?'blocked':''}">
-      <td><b>${esc(s.name)}</b><br><small style="color:#555">${esc(s.api_url||'').substring(0,50)}</small></td>
-      <td>${s.category||'-'}</td>
-      <td>${s.resource_count||'-'}条</td>
-      <td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td>
-      <td>
-        <button class="btn btn-o" onclick="api('/api/stations/${s.slug}/post','POST')">📤</button>
-        <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'🔓':'🚫'}</button>
-      </td>
-    </tr>`).join('');
+  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>`<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small style="color:#444">${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${s.slug}/post','POST')">📤</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'🔓':'🚫'}</button></td></tr>`).join('');
 }
 async function api(path,method='GET',body=null){
-  const opts={method,headers:{}};
-  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
-  const r=await fetch(path,opts).then(r=>r.json());
-  if(r.ok){addLog('ok',`${method} ${path} → OK`);await loadStats();await loadStations();render();}
-  else addLog('err',`${method} ${path} → ${r.error}`);
+  const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
+  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
+  try{const r=await fetch(server+path,opts).then(r=>r.json());
+  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} → ${r.error}`);}catch(e){addLog('err',`${path} → ${e.message}`)}
 }
 async function saveChannels(){
-  const raw=document.getElementById('cfg-channels').value;
-  try{const map=JSON.parse(raw);await api('/api/config','PUT',{channel_map:map});}catch(e){addLog('err','JSON格式错误');}
+  try{const map=JSON.parse(document.getElementById('cfg-channels').value);await api('/api/config','PUT',{channel_map:map})}catch(e){addLog('err','JSON格式错误')}
 }
 async function saveConfig(){
   await api('/api/config','PUT',{
@@ -172,31 +198,27 @@ function switchTab(name){
   if(name==='channels')loadConfig();
 }
 function addLog(type,msg){
-  const el=document.getElementById('log-box');
-  const t=new Date().toLocaleTimeString();
+  const el=document.getElementById('log-el');const t=new Date().toLocaleTimeString();
   el.innerHTML+=`<div><span class="ts">${t}</span> <span class="${type}">${msg}</span></div>`;
-  if(el.children.length>100)el.removeChild(el.firstChild);
-  el.scrollTop=el.scrollHeight;
+  if(el.children.length>200)el.firstChild.remove();el.scrollTop=el.scrollHeight;
 }
 function connectWS(){
-  const proto=location.protocol==='https:'?'wss:':'ws:';
-  ws=new WebSocket(`${proto}//${location.host}/ws`);
-  ws.onopen=()=>{document.getElementById('conn-status').textContent='🟢 已连接';addLog('info','WebSocket 已连接');};
-  ws.onclose=()=>{document.getElementById('conn-status').textContent='🔴 断开, 3s重连...';setTimeout(connectWS,3000);};
+  const u=new URL(server);u.protocol=u.protocol==='https:'?'wss:':'ws:';u.pathname='/ws';if(key)u.searchParams.set('api_key',key);
+  ws=new WebSocket(u.toString());
   ws.onmessage=e=>{
     const msg=JSON.parse(e.data);
-    const t=new Date().toLocaleTimeString();
     switch(msg.type){
-      case'scrape_triggered':addLog('info','🔄 采集已启动');break;
-      case'scrape_complete':addLog('ok',`✅ 采集完成: ${msg.data.new_count}新 ${msg.data.upd_count}更新`);loadStats();break;
-      case'content_triggered':addLog('info','🎬 内容抓取已启动');break;
-      case'manual_post':addLog('ok',`📤 手动推送: ${msg.data.name} → MSG#${msg.data.message_id}`);break;
+      case'scrape_triggered':addLog('info','🔄 采集启动');break;
+      case'scrape_complete':addLog('ok',`✅ 采集完成: ${msg.data.new_count||0}新 ${msg.data.upd_count||0}更新`);loadStats();break;
+      case'content_triggered':addLog('info','🎬 内容抓取启动');break;
+      case'manual_post':addLog('ok',`📤 ${msg.data.name} → MSG#${msg.data.message_id}`);break;
       case'blacklist_changed':addLog('info',`🚫 ${msg.data.slug}: ${msg.data.blacklisted?'屏蔽':'解除'}`);loadStats();loadStations();render();break;
       case'config_updated':addLog('ok','⚙️ 配置已更新');loadConfig();break;
-      default:addLog('info',`📡 ${msg.type}`);}
+    }
   };
+  ws.onclose=()=>setTimeout(connectWS,3000);
 }
-function esc(s){return(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 init();
 </script>
 </body>
