@@ -156,7 +156,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"content_mode":  h.cfg.ContentMode,
 		"content_limit": h.cfg.ContentLimit,
 		"listen_addr":   h.cfg.ListenAddr,
-		"channel_id":    h.cfg.ChannelID,
+		"channel_ids":   h.cfg.ChannelIDs,
 		"post_format":   h.cfg.PostFormat,
 		"bot_token":     maskToken(h.cfg.BotToken),
 	}
@@ -197,6 +197,20 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 		switch val := v.(type) {
 		case float64:
 			h.cfg.ChannelID = int64(val)
+		case int64:
+			h.cfg.ChannelID = val
+		}
+	}
+	if v, ok := body["channel_ids"]; ok {
+		if arr, ok := v.([]interface{}); ok {
+			ids := make([]int64, 0, len(arr))
+			for _, item := range arr {
+				switch val := item.(type) {
+				case float64:
+					ids = append(ids, int64(val))
+				}
+			}
+			h.cfg.ChannelIDs = ids
 		}
 	}
 	h.cfg.Save("config.json")

@@ -44,7 +44,8 @@ type APIDetailResp struct {
 type ContentItem struct {
 	Title    string   `json:"title"`
 	TypeName string   `json:"type_name"`
-	Episodes []string `json:"episodes"` // ["第1集$url", ...]
+	Category string   `json:"category"`
+	Episodes []string `json:"episodes"`
 	CoverURL string   `json:"cover_url"`
 	Source   string   `json:"source"`
 	VodID    int      `json:"vod_id"`
@@ -91,6 +92,7 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 				ci := ContentItem{
 					Title:    item.VodName,
 					TypeName: item.TypeName,
+					Category: Classify(item.TypeName, nil),
 					CoverURL: item.VodPic,
 					Source:   src.Name,
 					VodID:    item.VodID,

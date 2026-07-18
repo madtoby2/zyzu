@@ -172,7 +172,7 @@ func (s *Scheduler) runContent() {
 	switch mode {
 	case "digest":
 		title := fmt.Sprintf("📺 今日更新精选 · %s", time.Now().Format("01/02 15:04"))
-		_, err = s.Poster.PostContentDigest(items, title)
+		_, err = s.Poster.PostContentDigest(items, title, "default")
 		if err == nil {
 			posted = len(items)
 		}
@@ -218,14 +218,17 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 			continue
 		}
 
-		// Upload to TG
+		cat := item.Category
+		if cat == "" {
+			cat = "default"
+		}
 		caption := fmt.Sprintf("<b>%s</b>", escapeHTML(item.Title))
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
 
-		_, err = s.Poster.PostVideo(filePath, caption)
+		_, err = s.Poster.PostVideo(filePath, caption, cat)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			continue
@@ -254,7 +257,7 @@ func (s *Scheduler) runPhotoPipeline(items []content.ContentItem) int {
 		}
 
 		if item.CoverURL != "" {
-			_, err := s.Poster.PostPhoto(item.CoverURL, caption)
+			_, err := s.Poster.PostPhoto(item.CoverURL, caption, item.Category)
 			if err == nil {
 				posted++
 				time.Sleep(1500 * time.Millisecond)

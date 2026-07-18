@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type Profile struct {
@@ -136,6 +140,8 @@ func main() {
 		cmdStatus(serverURL, apiKey)
 	case "history":
 		cmdHistory(serverURL, apiKey)
+	case "watch":
+		cmdWatch(serverURL, apiKey)
 	default:
 		usage()
 	}
@@ -333,6 +339,79 @@ func cmdHistory(server, key string) {
 	fmt.Printf("%-20s %-20s %-8s %s\n", "时间", "站点", "动作", "MSG ID")
 	for _, h := range resp.Data {
 		fmt.Printf("%-20s %-20s %-8s %d\n", h.PostedAt[:19], h.Content, h.Action, h.MessageID)
+	}
+}
+
+func cmdWatch(server, key string) {
+	u, _ := url.Parse(server)
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	u.Path = "/ws"
+	if key != "" {
+		u.RawQuery = "api_key=" + key
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		fmt.Printf("WebSocket连接失败: %v\n", err)
+		return
+	}
+	defer conn.Close()
+
+	fmt.Println("📡 实时监控已连接 — Ctrl+C 退出")
+	fmt.Println()
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			fmt.Printf("\n连接断开: %v\n", err)
+			return
+		}
+		var event struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		json.Unmarshal(msg, &event)
+
+		now := time.Now().Format("15:04:05")
+		switch event.Type {
+		case "scrape_triggered":
+			fmt.Printf("[%s] 🔄 采集任务已启动\n", now)
+		case "scrape_complete":
+			var d struct {
+				NewCount int `json:"new_count"`
+				UpdCount int `json:"upd_count"`
+			}
+			json.Unmarshal(event.Data, &d)
+			fmt.Printf("[%s] ✅ 采集完成: %d新站 %d更新\n", now, d.NewCount, d.UpdCount)
+		case "content_triggered":
+			fmt.Printf("[%s] 🎬 内容抓取已启动\n", now)
+		case "manual_post":
+			var d struct {
+				Name      string `json:"name"`
+				MessageID int    `json:"message_id"`
+			}
+			json.Unmarshal(event.Data, &d)
+			fmt.Printf("[%s] 📤 手动推送: %s → MSG#%d\n", now, d.Name, d.MessageID)
+		case "blacklist_changed":
+			var d struct {
+				Slug        string `json:"slug"`
+				Blacklisted bool   `json:"blacklisted"`
+			}
+			json.Unmarshal(event.Data, &d)
+			action := "解除"
+			if d.Blacklisted {
+				action = "屏蔽"
+			}
+			fmt.Printf("[%s] 🚫 %s: %s\n", now, action, d.Slug)
+		case "config_updated":
+			fmt.Printf("[%s] ⚙️ 配置已更新\n", now)
+		default:
+			fmt.Printf("[%s] 📡 %s: %s\n", now, event.Type, string(event.Data))
+		}
 	}
 }
 
