@@ -1,0 +1,5 @@
+*.exe
+zyzu_linux
+*.db
+data/
+.env

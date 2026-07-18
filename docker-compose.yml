@@ -1,0 +1,12 @@
+services:
+  zyzu:
+    build: .
+    container_name: zyzu
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
+    environment:
+      - TZ=Asia/Shanghai

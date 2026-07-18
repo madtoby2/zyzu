@@ -1,0 +1,16 @@
+[Unit]
+Description=ZYZU - 资源组 TG频道机器人
+After=network.target
+
+[Service]
+Type=simple
+User=zyzu
+WorkingDirectory=/opt/zyzu
+ExecStart=/opt/zyzu/zyzu_linux
+Restart=always
+RestartSec=10
+Environment=ZYZU_ADDR=:8080
+Environment=ZYZU_DB=/opt/zyzu/zyzu.db
+
+[Install]
+WantedBy=multi-user.target
