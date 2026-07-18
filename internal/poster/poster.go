@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,13 +22,14 @@ type Poster struct {
 	token     string
 	channelID int64
 	client    *http.Client
+	threadID  int // message_thread_id for forum topics (0 = no topic)
 }
 
 func New(token string, channelID int64) *Poster {
 	return &Poster{
 		token:     token,
 		channelID: channelID,
-		client:    &http.Client{Timeout: 25 * time.Second},
+		client:    &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -37,20 +41,98 @@ func (p *Poster) PostSimple(text string) (int, error) {
 	return p.sendMessage(text, "")
 }
 
-// PostContent sends a single item: cover photo + title + play link.
-func (p *Poster) PostContent(item content.ContentItem) (int, error) {
-	caption := formatContent(item)
-	if item.CoverURL != "" {
-		id, err := p.sendPhoto(item.CoverURL, caption)
-		if err == nil {
-			time.Sleep(500 * time.Millisecond)
-			return id, nil
-		}
-	}
-	return p.sendMessage(caption, "HTML")
+// PostHTML sends HTML-formatted text.
+func (p *Poster) PostHTML(text string) (int, error) {
+	return p.sendMessage(text, "HTML")
 }
 
-// PostContentDigest sends compact list with play links.
+// PostVideo uploads a local video file with caption.
+func (p *Poster) PostVideo(filePath, caption string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("open video: %w", err)
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	w.WriteField("chat_id", fmt.Sprintf("%d", p.channelID))
+	w.WriteField("caption", caption)
+	w.WriteField("parse_mode", "HTML")
+	w.WriteField("supports_streaming", "true")
+	if p.threadID > 0 {
+		w.WriteField("message_thread_id", fmt.Sprintf("%d", p.threadID))
+	}
+
+	part, _ := w.CreateFormFile("video", filepath.Base(filePath))
+	io.Copy(part, file)
+	w.Close()
+
+	url := tgAPI + p.token + "/sendVideo"
+	req, _ := http.NewRequest("POST", url, &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	respData, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("sendVideo HTTP %d: %s", resp.StatusCode, string(respData))
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	json.Unmarshal(respData, &result)
+	if !result.OK {
+		return 0, fmt.Errorf("sendVideo failed: %s", string(respData))
+	}
+	return result.Result.MessageID, nil
+}
+
+// PostPhoto sends a photo with caption.
+func (p *Poster) PostPhoto(photoURL, caption string) (int, error) {
+	body := map[string]interface{}{
+		"chat_id":    p.channelID,
+		"photo":      photoURL,
+		"caption":    caption,
+		"parse_mode": "HTML",
+	}
+	data, _ := json.Marshal(body)
+
+	url := tgAPI + p.token + "/sendPhoto"
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	respData, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("sendPhoto HTTP %d: %s", resp.StatusCode, string(respData))
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	json.Unmarshal(respData, &result)
+	return result.Result.MessageID, nil
+}
+
+// PostContentDigest sends a text list with play links.
 func (p *Poster) PostContentDigest(items []content.ContentItem, title string) (int, error) {
 	var sb strings.Builder
 	sb.WriteString("<b>")
@@ -66,16 +148,10 @@ func (p *Poster) PostContentDigest(items []content.ContentItem, title string) (i
 			sb.WriteString(fmt.Sprintf(" [%s]", item.TypeName))
 		}
 		sb.WriteString("\n")
-
 		if len(item.Episodes) > 0 {
-			// Show first episode with playable link
-			ep := item.Episodes[0]
-			parts := strings.SplitN(ep, "$", 2)
+			parts := strings.SplitN(item.Episodes[0], "$", 2)
 			if len(parts) == 2 {
 				sb.WriteString(fmt.Sprintf("   🎬 <a href=\"%s\">%s</a>\n", parts[1], parts[0]))
-			}
-			if len(item.Episodes) > 1 {
-				sb.WriteString(fmt.Sprintf("   📺 共%d集 | %s\n", len(item.Episodes), item.Source))
 			}
 		}
 		sb.WriteString("\n")
@@ -91,43 +167,16 @@ func (p *Poster) PostContentDigest(items []content.ContentItem, title string) (i
 		}
 	}
 	sb.WriteString(strings.Join(sources, " · "))
-
-	// Send as plain text with HTML parse mode
 	return p.sendMessage(sb.String(), "HTML")
 }
 
-// PostContentSplit posts items individually with photo + play link (for video playback mode).
-func (p *Poster) PostContentSplit(items []content.ContentItem) (int, error) {
-	count := 0
-	limit := 10
-	if len(items) < limit {
-		limit = len(items)
-	}
-	for _, item := range items[:limit] {
-		_, err := p.PostContent(item)
-		if err != nil {
-			continue
-		}
-		count++
-		time.Sleep(1500 * time.Millisecond) // TG rate limit
-	}
-	return count, nil
-}
-
-func formatContent(item content.ContentItem) string {
+func formatVideoCaption(item content.ContentItem) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", escapeHTML(item.Title)))
 	if item.TypeName != "" {
 		sb.WriteString(fmt.Sprintf(" | %s", item.TypeName))
 	}
-	sb.WriteString(fmt.Sprintf("\n📡 %s\n", item.Source))
-
-	for _, ep := range item.Episodes {
-		parts := strings.SplitN(ep, "$", 2)
-		if len(parts) == 2 {
-			sb.WriteString(fmt.Sprintf("🎬 <a href=\"%s\">%s</a>\n", parts[1], parts[0]))
-		}
-	}
+	sb.WriteString(fmt.Sprintf("\n📡 %s", item.Source))
 	return sb.String()
 }
 
@@ -164,6 +213,9 @@ func (p *Poster) sendMessage(text string, parseMode string) (int, error) {
 		body["parse_mode"] = parseMode
 		body["disable_web_page_preview"] = true
 	}
+	if p.threadID > 0 {
+		body["message_thread_id"] = p.threadID
+	}
 	data, _ := json.Marshal(body)
 
 	url := tgAPI + p.token + "/sendMessage"
@@ -194,44 +246,6 @@ func (p *Poster) sendMessage(text string, parseMode string) (int, error) {
 		return 0, fmt.Errorf("TG API error: %s", string(respData))
 	}
 	return result.Result.MessageID, nil
-}
-
-func (p *Poster) sendPhoto(photoURL, caption string) (int, error) {
-	body := map[string]interface{}{
-		"chat_id":    p.channelID,
-		"photo":      photoURL,
-		"caption":    caption,
-		"parse_mode": "HTML",
-	}
-	data, _ := json.Marshal(body)
-
-	url := tgAPI + p.token + "/sendPhoto"
-	req, _ := http.NewRequest("POST", url, bytes.NewReader(data))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	respData, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("sendPhoto HTTP %d: %s", resp.StatusCode, string(respData))
-	}
-
-	var result struct {
-		OK     bool `json:"ok"`
-		Result struct {
-			MessageID int `json:"message_id"`
-		} `json:"result"`
-	}
-	json.Unmarshal(respData, &result)
-	return result.Result.MessageID, nil
-}
-
-func formatContentCaption(item content.ContentItem) string {
-	return formatContent(item)
 }
 
 func escapeMD(s string) string {

@@ -21,7 +21,7 @@ func Default() *Config {
 		ScrapeCron:   "0 */6 * * *",
 		ContentCron:  "0 8,20 * * *",
 		ListenAddr:   ":8080",
-		ContentMode:  "split",
+		ContentMode:  "video",
 		ContentLimit: 10,
 		PostFormat: `📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}
 🏷 {tags}
