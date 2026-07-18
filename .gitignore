@@ -3,3 +3,4 @@ zyzu_linux
 *.db
 data/
 .env
+zyzu-cli_linux

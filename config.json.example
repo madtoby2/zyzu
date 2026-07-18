@@ -1,4 +1,5 @@
 {
+  "api_key": "your-secret-key-here",
   "bot_token": "YOUR_BOT_TOKEN_HERE",
   "channel_id": -1001234567890,
   "scrape_cron": "0 */6 * * *",

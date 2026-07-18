@@ -6,14 +6,15 @@ import (
 )
 
 type Config struct {
-	BotToken    string `json:"bot_token"`
-	ChannelID   int64  `json:"channel_id"`
-	ScrapeCron  string `json:"scrape_cron"`
-	ContentCron string `json:"content_cron"`
-	ListenAddr  string `json:"listen_addr"`
-	PostFormat  string `json:"post_format"`
-	ContentMode string `json:"content_mode"` // "digest" or "split"
-	ContentLimit int   `json:"content_limit"` // max items per run
+	BotToken     string `json:"bot_token"`
+	ChannelID    int64  `json:"channel_id"`
+	APIKey       string `json:"api_key"`
+	ScrapeCron   string `json:"scrape_cron"`
+	ContentCron  string `json:"content_cron"`
+	ListenAddr   string `json:"listen_addr"`
+	PostFormat   string `json:"post_format"`
+	ContentMode  string `json:"content_mode"`
+	ContentLimit int    `json:"content_limit"`
 }
 
 func Default() *Config {

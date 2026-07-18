@@ -24,17 +24,44 @@ func New(st *store.Store, sched *scheduler.Scheduler, cfg *config.Config, hub *s
 }
 
 func (h *Handler) Register(r chi.Router) {
+	// Public read-only
 	r.Get("/api/stations", h.getStations)
 	r.Get("/api/stations/stats", h.getStats)
-	r.Post("/api/stations/{slug}/blacklist", h.toggleBlacklist)
-	r.Post("/api/stations/{slug}/post", h.manualPost)
 	r.Get("/api/history", h.getHistory)
-	r.Post("/api/trigger", h.triggerScrape)
-	r.Post("/api/content/trigger", h.triggerContent)
-	r.Get("/api/config", h.getConfig)
-	r.Put("/api/config", h.updateConfig)
 	r.Get("/api/status", h.getStatus)
-	r.Get("/ws", h.hub.HandleWS)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+
+	// Protected write operations
+	r.Group(func(r chi.Router) {
+		r.Use(h.authMiddleware)
+		r.Post("/api/stations/{slug}/blacklist", h.toggleBlacklist)
+		r.Post("/api/stations/{slug}/post", h.manualPost)
+		r.Post("/api/trigger", h.triggerScrape)
+		r.Post("/api/content/trigger", h.triggerContent)
+		r.Get("/api/config", h.getConfig)
+		r.Put("/api/config", h.updateConfig)
+		r.Get("/ws", h.hub.HandleWS)
+	})
+}
+
+func (h *Handler) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.cfg.APIKey == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		key := r.Header.Get("X-API-Key")
+		if key == "" {
+			key = r.URL.Query().Get("api_key")
+		}
+		if key != h.cfg.APIKey {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) getStations(w http.ResponseWriter, r *http.Request) {
