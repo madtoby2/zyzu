@@ -4,3 +4,5 @@ zyzu_linux
 data/
 .env
 zyzu-cli_linux
+config.json
+*~
