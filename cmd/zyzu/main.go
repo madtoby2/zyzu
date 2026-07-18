@@ -1,6 +1,8 @@
 package main
 
 import (
+	"embed"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +20,9 @@ import (
 	"github.com/madtoby2/zyzu/internal/server"
 	"github.com/madtoby2/zyzu/internal/store"
 )
+
+//go:embed web
+var webFS embed.FS
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -66,6 +71,15 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
+
+	// Static web UI
+	webSub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		log.Fatalf("fs.Sub web: %v", err)
+	}
+	fileServer := http.FileServer(http.FS(webSub))
+	r.Get("/", fileServer.ServeHTTP)
+	r.NotFound(fileServer.ServeHTTP)
 
 	go func() {
 		sig := make(chan os.Signal, 1)

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZYZU 控制台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#0d0d14;color:#ccc;padding:16px;max-width:1100px;margin:0 auto}
+h1{font-size:20px;color:#ec4899;margin-bottom:4px}
+.sub{font-size:12px;color:#555;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.card{background:#161622;border:1px solid #222;border-radius:10px;padding:14px;text-align:center}
+.card .n{font-size:26px;font-weight:700;color:#fff}
+.card .l{font-size:11px;color:#666;margin-top:2px}
+.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.toolbar input,.toolbar select{flex:1;min-width:120px;padding:7px 10px;background:#161622;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px}
+.toolbar input:focus{outline:none;border-color:#ec4899}
+.btn{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+.btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
+.btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
+.btn-r{background:#ef4444;color:#fff}.btn-r:hover{background:#dc2626}
+.btn-o{background:transparent;border:1px solid #444;color:#aaa}.btn-o:hover{background:#222;color:#fff}
+.tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #222}
+.tab{background:none;border:none;color:#666;padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent}
+.tab.active{color:#ec4899;border-bottom-color:#ec4899}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 10px;background:#161622;border-bottom:1px solid #222;color:#666;font-weight:600}
+td{padding:7px 10px;border-bottom:1px solid #161622}
+tr:hover td{background:#1a1a28}
+.blocked{opacity:.4}
+.green{color:#10b981}.red{color:#ef4444}.yellow{color:#f59e0b}
+.config-form{background:#161622;border:1px solid #222;border-radius:10px;padding:16px}
+.config-form label{display:block;margin-bottom:10px;font-size:12px;color:#888}
+.config-form input,.config-form textarea{width:100%;margin-top:3px;padding:7px 10px;background:#0d0d14;border:1px solid #333;border-radius:7px;color:#ccc;font-size:13px;font-family:monospace}
+.config-form textarea{resize:vertical;min-height:80px}
+.log{background:#0d0d14;border:1px solid #222;border-radius:10px;padding:12px;max-height:300px;overflow-y:auto;font-size:12px;font-family:monospace}
+.log .ts{color:#666}.log .info{color:#aaa}.log .ok{color:#10b981}.log .err{color:#ef4444}
+.hidden{display:none}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px}
+.b-adult{background:#ef444422;color:#ef4444}
+.b-movie{background:#3b82f622;color:#3b82f6}
+.b-anime{background:#8b5cf622;color:#8b5cf6}
+.b-default{background:#6663;color:#999}
+</style>
+</head>
+<body>
+
+<h1>📡 ZYZU 控制台</h1>
+<div class="sub" id="conn-status">连接中...</div>
+
+<div class="grid">
+  <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
+  <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽</div></div>
+  <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送</div></div>
+  <div class="card"><div class="n" id="s-running">-</div><div class="l">调度状态</div></div>
+</div>
+
+<div class="toolbar">
+  <input id="search" placeholder="搜索站名/API..." oninput="render()">
+  <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap">
+    <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽
+  </label>
+  <button class="btn btn-p" onclick="api('/api/trigger','POST')">🔄 采集</button>
+  <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">🎬 抓内容</button>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('stations')">资源站</button>
+  <button class="tab" onclick="switchTab('channels')">频道管理</button>
+  <button class="tab" onclick="switchTab('config')">配置</button>
+  <button class="tab" onclick="switchTab('log')">日志</button>
+</div>
+
+<div id="tab-stations"><table><thead><tr><th>名称</th><th>分类</th><th>资源量</th><th>可用率</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
+
+<div id="tab-channels" class="hidden">
+  <div class="config-form">
+    <label>频道映射 (JSON格式: {"分类": [频道ID数组]})
+      <textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea>
+    </label>
+    <button class="btn btn-p" onclick="saveChannels()">保存频道配置</button>
+  </div>
+</div>
+
+<div id="tab-config" class="hidden">
+  <div class="config-form">
+    <label>Bot Token <input id="cfg-token"></label>
+    <label>采集Cron <input id="cfg-scrape" placeholder="0 0 */6 * * *"></label>
+    <label>内容Cron <input id="cfg-content-cron" placeholder="0 8,20 * * *"></label>
+    <label>内容模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
+    <label>每次条数 <input id="cfg-limit" type="number" value="10"></label>
+    <button class="btn btn-p" onclick="saveConfig()">保存配置</button>
+  </div>
+</div>
+
+<div id="tab-log" class="hidden">
+  <div class="log" id="log-box"></div>
+</div>
+
+<script>
+let stations=[],config={},ws;
+
+async function init(){
+  await Promise.all([loadStats(),loadStations(),loadConfig()]);
+  render();
+  connectWS();
+}
+async function loadStats(){
+  const r=await fetch('/api/stations/stats').then(r=>r.json());
+  if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted;}
+  const s=await fetch('/api/status').then(r=>r.json());
+  if(s.ok)document.getElementById('s-running').textContent=s.data.running?'运行中':'空闲';
+}
+async function loadStations(){
+  const r=await fetch('/api/stations?all=1').then(r=>r.json());
+  if(r.ok)stations=r.data;
+}
+async function loadConfig(){
+  const r=await fetch('/api/config',{headers:{'X-API-Key':''}}).then(r=>r.json());
+  if(r.ok&&r.data){
+    config=r.data;
+    document.getElementById('cfg-token').value=config.bot_token||'';
+    document.getElementById('cfg-scrape').value=config.scrape_cron||'';
+    document.getElementById('cfg-content-cron').value=config.content_cron||'';
+    document.getElementById('cfg-mode').value=config.content_mode||'video';
+    document.getElementById('cfg-limit').value=config.content_limit||10;
+    if(config.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:config.channel_ids});
+  }
+}
+function render(){
+  const q=document.getElementById('search').value.toLowerCase();
+  const sb=document.getElementById('show-blocked').checked;
+  const tbody=document.getElementById('station-list');
+  tbody.innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||s.api_url.toLowerCase().includes(q))).map(s=>`
+    <tr class="${s.blacklisted?'blocked':''}">
+      <td><b>${esc(s.name)}</b><br><small style="color:#555">${esc(s.api_url||'').substring(0,50)}</small></td>
+      <td>${s.category||'-'}</td>
+      <td>${s.resource_count||'-'}条</td>
+      <td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td>
+      <td>
+        <button class="btn btn-o" onclick="api('/api/stations/${s.slug}/post','POST')">📤</button>
+        <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'🔓':'🚫'}</button>
+      </td>
+    </tr>`).join('');
+}
+async function api(path,method='GET',body=null){
+  const opts={method,headers:{}};
+  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
+  const r=await fetch(path,opts).then(r=>r.json());
+  if(r.ok){addLog('ok',`${method} ${path} → OK`);await loadStats();await loadStations();render();}
+  else addLog('err',`${method} ${path} → ${r.error}`);
+}
+async function saveChannels(){
+  const raw=document.getElementById('cfg-channels').value;
+  try{const map=JSON.parse(raw);await api('/api/config','PUT',{channel_map:map});}catch(e){addLog('err','JSON格式错误');}
+}
+async function saveConfig(){
+  await api('/api/config','PUT',{
+    bot_token:document.getElementById('cfg-token').value,
+    scrape_cron:document.getElementById('cfg-scrape').value,
+    content_cron:document.getElementById('cfg-content-cron').value,
+    content_mode:document.getElementById('cfg-mode').value,
+    content_limit:parseInt(document.getElementById('cfg-limit').value)||10
+  });
+}
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-"]').forEach(t=>t.classList.add('hidden'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('tab-'+name).classList.remove('hidden');
+  if(name==='channels')loadConfig();
+}
+function addLog(type,msg){
+  const el=document.getElementById('log-box');
+  const t=new Date().toLocaleTimeString();
+  el.innerHTML+=`<div><span class="ts">${t}</span> <span class="${type}">${msg}</span></div>`;
+  if(el.children.length>100)el.removeChild(el.firstChild);
+  el.scrollTop=el.scrollHeight;
+}
+function connectWS(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen=()=>{document.getElementById('conn-status').textContent='🟢 已连接';addLog('info','WebSocket 已连接');};
+  ws.onclose=()=>{document.getElementById('conn-status').textContent='🔴 断开, 3s重连...';setTimeout(connectWS,3000);};
+  ws.onmessage=e=>{
+    const msg=JSON.parse(e.data);
+    const t=new Date().toLocaleTimeString();
+    switch(msg.type){
+      case'scrape_triggered':addLog('info','🔄 采集已启动');break;
+      case'scrape_complete':addLog('ok',`✅ 采集完成: ${msg.data.new_count}新 ${msg.data.upd_count}更新`);loadStats();break;
+      case'content_triggered':addLog('info','🎬 内容抓取已启动');break;
+      case'manual_post':addLog('ok',`📤 手动推送: ${msg.data.name} → MSG#${msg.data.message_id}`);break;
+      case'blacklist_changed':addLog('info',`🚫 ${msg.data.slug}: ${msg.data.blacklisted?'屏蔽':'解除'}`);loadStats();loadStations();render();break;
+      case'config_updated':addLog('ok','⚙️ 配置已更新');loadConfig();break;
+      default:addLog('info',`📡 ${msg.type}`);}
+  };
+}
+function esc(s){return(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+init();
+</script>
+</body>
+</html>
