@@ -12,7 +12,7 @@ type Station struct {
 	Slug          string    `json:"slug"`
 	Name          string    `json:"name"`
 	Category      string    `json:"category"`
-	Tags          string    `json:"tags"` // JSON array
+	Tags          string    `json:"tags"`
 	APIURL        string    `json:"api_url"`
 	InterfaceType string    `json:"interface_type"`
 	ResourceCount string    `json:"resource_count"`
@@ -22,14 +22,14 @@ type Station struct {
 	Blacklisted   bool      `json:"blacklisted"`
 	FirstSeen     time.Time `json:"first_seen"`
 	LastSeen      time.Time `json:"last_seen"`
-	LastPosted    time.Time `json:"last_posted"`
+	LastPosted    string    `json:"last_posted"`
 }
 
 type PostLog struct {
 	ID        int64     `json:"id"`
 	StationID int64     `json:"station_id"`
 	MessageID int       `json:"message_id"`
-	Action    string    `json:"action"` // "new", "update", "manual"
+	Action    string    `json:"action"`
 	PostedAt  time.Time `json:"posted_at"`
 	Content   string    `json:"content"`
 }
@@ -69,7 +69,7 @@ func (s *Store) migrate() error {
 		blacklisted INTEGER DEFAULT 0,
 		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-		last_posted DATETIME DEFAULT NULL
+		last_posted TEXT DEFAULT ''
 	);
 	CREATE TABLE IF NOT EXISTS post_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,8 +87,6 @@ func (s *Store) migrate() error {
 	return err
 }
 
-// UpsertStation inserts or updates a station from scraper data.
-// Returns true if the station is new (first_seen == last_seen).
 func (s *Store) UpsertStation(st *Station) (bool, error) {
 	now := time.Now()
 	var existingID int64
@@ -96,7 +94,6 @@ func (s *Store) UpsertStation(st *Station) (bool, error) {
 	err := s.db.QueryRow("SELECT id, blacklisted FROM stations WHERE slug = ?", st.Slug).
 		Scan(&existingID, &existingBlacklisted)
 	if err == sql.ErrNoRows {
-		// New station
 		res, err := s.db.Exec(`
 			INSERT INTO stations (slug, name, category, tags, api_url, interface_type,
 				resource_count, availability, response_time, description, first_seen, last_seen)
@@ -115,8 +112,6 @@ func (s *Store) UpsertStation(st *Station) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	// Update existing
 	st.ID = existingID
 	st.Blacklisted = existingBlacklisted
 	_, err = s.db.Exec(`
@@ -132,7 +127,6 @@ func (s *Store) UpsertStation(st *Station) (bool, error) {
 	return false, nil
 }
 
-// GetStations returns all stations, optionally filtering blacklisted.
 func (s *Store) GetStations(includeBlacklisted bool) ([]Station, error) {
 	query := "SELECT id, slug, name, category, tags, api_url, interface_type, resource_count, availability, response_time, description, blacklisted, first_seen, last_seen, last_posted FROM stations"
 	if !includeBlacklisted {
@@ -160,13 +154,11 @@ func (s *Store) GetStations(includeBlacklisted bool) ([]Station, error) {
 	return stations, nil
 }
 
-// SetBlacklist toggles the blacklist status of a station.
 func (s *Store) SetBlacklist(slug string, blacklisted bool) error {
 	_, err := s.db.Exec("UPDATE stations SET blacklisted=? WHERE slug=?", blacklisted, slug)
 	return err
 }
 
-// HasBeenPosted checks if a station was posted recently (within duration).
 func (s *Store) HasBeenPosted(slug string, within time.Duration) (bool, error) {
 	var count int
 	err := s.db.QueryRow(
@@ -176,7 +168,6 @@ func (s *Store) HasBeenPosted(slug string, within time.Duration) (bool, error) {
 	return count > 0, err
 }
 
-// LogPost records a post action.
 func (s *Store) LogPost(stationID int64, action string, messageID int, content string) error {
 	_, err := s.db.Exec(
 		"INSERT INTO post_log (station_id, action, message_id, content) VALUES (?, ?, ?, ?)",
@@ -188,7 +179,6 @@ func (s *Store) LogPost(stationID int64, action string, messageID int, content s
 	return err
 }
 
-// GetPostHistory returns recent posting history.
 func (s *Store) GetPostHistory(limit int) ([]PostLog, error) {
 	rows, err := s.db.Query(
 		"SELECT id, station_id, message_id, action, posted_at, content FROM post_log ORDER BY posted_at DESC LIMIT ?",
@@ -209,7 +199,6 @@ func (s *Store) GetPostHistory(limit int) ([]PostLog, error) {
 	return logs, nil
 }
 
-// GetStationBySlug returns a single station.
 func (s *Store) GetStationBySlug(slug string) (*Station, error) {
 	var st Station
 	err := s.db.QueryRow(
@@ -225,15 +214,14 @@ func (s *Store) GetStationBySlug(slug string) (*Station, error) {
 	return &st, nil
 }
 
-// GetStats returns aggregate statistics.
 func (s *Store) GetStats() (map[string]interface{}, error) {
 	var total, blacklisted, posted int
 	s.db.QueryRow("SELECT COUNT(*) FROM stations").Scan(&total)
 	s.db.QueryRow("SELECT COUNT(*) FROM stations WHERE blacklisted=1").Scan(&blacklisted)
 	s.db.QueryRow("SELECT COUNT(*) FROM post_log").Scan(&posted)
 	return map[string]interface{}{
-		"total":      total,
+		"total":       total,
 		"blacklisted": blacklisted,
-		"posted":     posted,
+		"posted":      posted,
 	}, nil
 }

@@ -94,9 +94,14 @@ func main() {
 		return
 	}
 
-	// All other commands need a server connection
-	if p == nil && serverURL == "http://localhost:8080" && apiKey == "" {
-		fmt.Println("未配置服务器。请先运行: zyzu-cli login")
+	// Write commands need auth
+	writeCmd := true
+	switch cmd {
+	case "list", "stats", "status", "history":
+		writeCmd = false
+	}
+	if writeCmd && p == nil && apiKey == "" {
+		fmt.Println("写操作需要API Key。设置: export ZYZU_KEY=xxx 或 zyzu-cli login")
 		return
 	}
 
