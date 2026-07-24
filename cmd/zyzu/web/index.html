@@ -6,7 +6,7 @@
 <title>ZYZU Client</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-body{background:#0a0a10;color:#ccc;min-height:100vh;display:flex;align-items:center;justify-content:center}
+body{background:#f4f6fa;color:#344054;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .login-box{background:#12121e;border:1px solid #222;border-radius:14px;padding:32px;width:380px;max-width:90vw}
 .login-box h1{font-size:22px;color:#ec4899;margin-bottom:4px;text-align:center}
 .login-box .sub{font-size:12px;color:#444;text-align:center;margin-bottom:24px}
@@ -19,12 +19,12 @@ body{background:#0a0a10;color:#ccc;min-height:100vh;display:flex;align-items:cen
 .saved{margin-top:12px;font-size:12px;color:#333}
 .saved span{cursor:pointer;color:#555;margin-right:12px}
 .saved span:hover{color:#ec4899}
-.app{max-width:1200px;margin:0 auto;padding:16px;width:100%;display:none}
+.app{max-width:1280px;margin:0 auto;padding:24px;width:100%;display:none;background:#fff;min-height:calc(100vh - 32px);border-radius:14px;box-shadow:0 8px 32px #1d293908}
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1a1a2a}
 .topbar h1{font-size:18px;color:#ec4899}.topbar .server{font-size:11px;color:#444}
 .topbar button{background:none;border:1px solid #333;color:#666;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.card{background:#12121e;border:1px solid #222;border-radius:10px;padding:14px;text-align:center}
+.card{background:#fff;border:1px solid #eaecf0;border-radius:10px;padding:16px;text-align:left;box-shadow:0 2px 5px #1018280a}
 .card .n{font-size:26px;font-weight:700}
 .card .l{font-size:11px;color:#555;margin-top:2px}
 .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
@@ -122,7 +122,7 @@ function init(){
     el.innerHTML='已保存: '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
   }
   const last=JSON.parse(localStorage.getItem('zyzu_last')||'null');
-  if(last){document.getElementById('login-server').value=last.server;document.getElementById('login-key').value=last.key;}
+  if(last){document.getElementById('login-server').value=last.server||'';document.getElementById('login-key').value=last.key||'';}
 }
 async function doLogin(){
   const s=document.getElementById('login-server').value.trim();
@@ -139,7 +139,7 @@ async function doLogin(){
   if(exists>=0)saved.splice(exists,1);
   saved.unshift({name,server,key:k});if(saved.length>5)saved.length=5;
   localStorage.setItem(LS,JSON.stringify(saved));
-  localStorage.setItem('zyzu_last',JSON.stringify({server,k}));
+  localStorage.setItem('zyzu_last',JSON.stringify({server,key:k}));
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('app-server').textContent=server;
@@ -175,8 +175,8 @@ function render(){
 async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
-  try{const r=await fetch(server+path,opts).then(r=>r.json());
-  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} → ${r.error}`);}catch(e){addLog('err',`${path} → ${e.message}`)}
+  try{const response=await fetch(server+path,opts);const r=await response.json();
+  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} → ${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} → ${e.message}`)}
 }
 async function saveChannels(){
   try{const map=JSON.parse(document.getElementById('cfg-channels').value);await api('/api/config','PUT',{channel_map:map})}catch(e){addLog('err','JSON格式错误')}
