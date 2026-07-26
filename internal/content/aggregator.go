@@ -20,6 +20,7 @@ type APIItem struct {
 	TypeName   string `json:"type_name"`
 	VodTime    string `json:"vod_time"`
 	VodRemarks string `json:"vod_remarks"`
+	VodContent string `json:"vod_content"`
 	VodPic     string `json:"vod_pic"`
 	VodPlayURL string `json:"vod_play_url"`
 }
@@ -50,6 +51,7 @@ type ContentItem struct {
 	Source   string   `json:"source"`
 	VodID    int      `json:"vod_id"`
 	VodTime  string   `json:"vod_time"`
+	Intro    string   `json:"intro"`
 }
 
 // Aggregator fetches content from CMS APIs.
@@ -97,12 +99,16 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					Source:   src.Name,
 					VodID:    item.VodID,
 					VodTime:  item.VodTime,
+					Intro:    item.VodContent,
 				}
 
 				// Fetch detail for play URLs (best-effort)
 				detail, err := a.fetchDetail(src, item.VodID)
-				if err == nil && len(detail) > 0 && detail[0].VodPlayURL != "" {
+				if err == nil && len(detail) > 0 {
 					ci.Episodes = parseEpisodes(detail[0].VodPlayURL)
+					if detail[0].VodContent != "" {
+						ci.Intro = detail[0].VodContent
+					}
 				}
 
 				all = append(all, ci)
@@ -120,9 +126,9 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 
 func (a *Aggregator) fetchList(src store.Station, page int) ([]APIItem, error) {
 	u := buildURL(src.APIURL, map[string]string{
-		"ac":   "list",
-		"pg":   fmt.Sprintf("%d", page),
-		"h":    "24", // last 24 hours
+		"ac": "list",
+		"pg": fmt.Sprintf("%d", page),
+		"h":  "24", // last 24 hours
 	})
 
 	resp, err := a.client.Get(u)
