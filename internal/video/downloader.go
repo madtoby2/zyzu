@@ -24,7 +24,9 @@ func New(workDir string) *Downloader {
 func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	// Sanitize filename
 	filename = sanitize(filename)
-	outPath := filepath.Join(d.WorkDir, filename+".mp4")
+	// Use a new cache namespace so files created by the former 120s cap are
+	// never mistaken for complete downloads.
+	outPath := filepath.Join(d.WorkDir, filename+".full.mp4")
 
 	// Skip if already exists
 	if _, err := os.Stat(outPath); err == nil {
