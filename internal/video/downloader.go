@@ -12,12 +12,12 @@ import (
 // Downloader converts m3u8 to mp4 via ffmpeg.
 type Downloader struct {
 	WorkDir string
-	Timeout int // seconds per download
+	Timeout int // optional seconds per download; zero means full duration
 }
 
 func New(workDir string) *Downloader {
 	os.MkdirAll(workDir, 0755)
-	return &Downloader{WorkDir: workDir, Timeout: 120}
+	return &Downloader{WorkDir: workDir, Timeout: 0}
 }
 
 // Download converts an m3u8 URL to an mp4 file. Returns the local file path.
@@ -33,15 +33,17 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 
 	// ffmpeg: download and convert
 	args := []string{
-		"-y",                    // overwrite
-		"-loglevel", "error",    // quiet
-		"-timeout", "30000000",  // 30s socket timeout (microseconds)
+		"-y",                 // overwrite
+		"-loglevel", "error", // quiet
+		"-timeout", "30000000", // 30s socket timeout (microseconds)
 		"-i", m3u8URL,
-		"-c", "copy",            // stream copy (fast, no re-encode)
+		"-c", "copy", // stream copy (fast, no re-encode)
 		"-bsf:a", "aac_adtstoasc",
 		"-movflags", "+faststart",
-		"-t", fmt.Sprintf("%d", d.Timeout), // max duration
 		outPath,
+	}
+	if d.Timeout > 0 {
+		args = append(args[:len(args)-1], "-t", fmt.Sprintf("%d", d.Timeout), args[len(args)-1])
 	}
 
 	cmd := exec.Command("ffmpeg", args...)
