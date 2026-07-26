@@ -1,6 +1,7 @@
 package content
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,6 +44,7 @@ type APIDetailResp struct {
 
 // ContentItem is our unified content format.
 type ContentItem struct {
+	Key       string   `json:"-"`
 	Title     string   `json:"title"`
 	TypeName  string   `json:"type_name"`
 	Remarks   string   `json:"remarks"`
@@ -54,6 +56,22 @@ type ContentItem struct {
 	VodID     int      `json:"vod_id"`
 	VodTime   string   `json:"vod_time"`
 	Intro     string   `json:"intro"`
+}
+
+// DedupKey identifies one source item across scheduler runs. The source is
+// part of the key because different资源站 may legitimately reuse vod_id.
+func DedupKey(item ContentItem) string {
+	if item.Key != "" {
+		return item.Key
+	}
+	raw := strings.TrimSpace(item.SourceURL) + "\x00"
+	if item.VodID > 0 {
+		raw += fmt.Sprintf("id:%d", item.VodID)
+	} else {
+		raw += "title:" + strings.ToLower(strings.Join(strings.Fields(item.Title), " ")) + "\x00time:" + strings.TrimSpace(item.VodTime)
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 // Aggregator fetches content from CMS APIs.
@@ -74,7 +92,7 @@ func New(sources []store.Station) *Aggregator {
 // FetchLatest gets the newest content across all enabled sources.
 func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	var all []ContentItem
-	seen := map[int]bool{}
+	seen := map[string]bool{}
 
 	for _, src := range a.sources {
 		if src.APIURL == "" || src.Blacklisted {
@@ -88,12 +106,14 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 			}
 
 			for _, item := range items {
-				if seen[item.VodID] {
+				key := itemKey(src.APIURL, item)
+				if seen[key] {
 					continue
 				}
-				seen[item.VodID] = true
+				seen[key] = true
 
 				ci := ContentItem{
+					Key:       key,
 					Title:     item.VodName,
 					TypeName:  item.TypeName,
 					Remarks:   item.VodRemarks,
@@ -129,6 +149,11 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+func itemKey(sourceURL string, item APIItem) string {
+	ci := ContentItem{SourceURL: sourceURL, VodID: item.VodID, Title: item.VodName, VodTime: item.VodTime}
+	return DedupKey(ci)
 }
 
 func cleanIntro(intro, title string, id int) string {

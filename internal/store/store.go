@@ -100,6 +100,11 @@ func (s *Store) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(created_at);
+	CREATE TABLE IF NOT EXISTS content_posts (
+		content_key TEXT PRIMARY KEY,
+		posted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_content_posts_posted_at ON content_posts(posted_at);
 	`
 	_, err := s.db.Exec(ddl)
 	if err != nil {
@@ -107,6 +112,18 @@ func (s *Store) migrate() error {
 	}
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
+	return err
+}
+
+// HasContentPosted checks whether a source item was already uploaded.
+func (s *Store) HasContentPosted(key string) (bool, error) {
+	var n int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM content_posts WHERE content_key=?", key).Scan(&n)
+	return n > 0, err
+}
+
+func (s *Store) LogContentPost(key string) error {
+	_, err := s.db.Exec("INSERT OR IGNORE INTO content_posts (content_key) VALUES (?)", key)
 	return err
 }
 

@@ -28,6 +28,7 @@ type Scheduler struct {
 
 	mu           sync.Mutex
 	running      bool
+	contentRun   bool
 	lastRun      time.Time
 	lastError    string
 	NewCount     int
@@ -126,6 +127,20 @@ func (s *Scheduler) runScrape() {
 }
 
 func (s *Scheduler) runContent() {
+	s.mu.Lock()
+	if s.contentRun {
+		s.mu.Unlock()
+		log.Printf("[scheduler] content: skipped because a run is already in progress")
+		return
+	}
+	s.contentRun = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.contentRun = false
+		s.mu.Unlock()
+	}()
+
 	mode := s.Cfg.ContentMode
 	if mode == "" {
 		mode = "split"
@@ -153,6 +168,26 @@ func (s *Scheduler) runContent() {
 	if len(items) > limit {
 		items = items[:limit]
 	}
+	// Keep this state in SQLite so a later cron run (or a process restart)
+	// cannot upload the same source item again.
+	filtered := items[:0]
+	for _, item := range items {
+		key := content.DedupKey(item)
+		posted, checkErr := s.Store.HasContentPosted(key)
+		if checkErr != nil {
+			log.Printf("[content] dedup check %s: %v", item.Title, checkErr)
+			continue
+		}
+		if !posted {
+			item.Key = key
+			filtered = append(filtered, item)
+		}
+	}
+	items = filtered
+	if len(items) == 0 {
+		log.Printf("[scheduler] content: no new items")
+		return
+	}
 
 	var posted int
 
@@ -162,6 +197,9 @@ func (s *Scheduler) runContent() {
 		_, err = s.Poster.PostContentDigest(items, title, "default")
 		if err == nil {
 			posted = len(items)
+			for _, item := range items {
+				_ = s.Store.LogContentPost(item.Key)
+			}
 		}
 
 	case "video":
@@ -224,6 +262,9 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		}
 
 		posted++
+		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
+			log.Printf("[content] record %s: %v", item.Title, err)
+		}
 		log.Printf("[video] posted: %s (%.0fMB)", item.Title, float64(fileSize(filePath))/1024/1024)
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
@@ -260,13 +301,20 @@ func (s *Scheduler) runPhotoPipeline(items []content.ContentItem) int {
 			_, err := s.Poster.PostPhoto(item.CoverURL, caption, item.Category)
 			if err == nil {
 				posted++
+				if logErr := s.Store.LogContentPost(content.DedupKey(item)); logErr != nil {
+					log.Printf("[content] record %s: %v", item.Title, logErr)
+				}
 				time.Sleep(1500 * time.Millisecond)
 				continue
 			}
 		}
 		// Fallback to text
-		s.Poster.PostHTML(caption)
-		posted++
+		if _, err := s.Poster.PostHTML(caption); err == nil {
+			posted++
+			if logErr := s.Store.LogContentPost(content.DedupKey(item)); logErr != nil {
+				log.Printf("[content] record %s: %v", item.Title, logErr)
+			}
+		}
 		time.Sleep(time.Second)
 	}
 	return posted
