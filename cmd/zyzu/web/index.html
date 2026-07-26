@@ -52,6 +52,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 .channel-card{background:#1b1b2b;border:1px solid #34344a;border-radius:9px;padding:12px;color:#ddd;cursor:pointer;transition:.15s}.channel-card:hover{border-color:#ec4899;transform:translateY(-2px);box-shadow:0 5px 16px #ec489933}
 .channel-card h4{color:#ec4899;font-size:13px;margin-bottom:8px}.channel-card .channel-id{font-family:monospace;font-size:12px;color:#aaa;word-break:break-all}
 .modal{position:fixed;inset:0;background:#090912aa;display:flex;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.hidden{display:none}.modal-panel{width:min(680px,100%);max-height:85vh;overflow:auto;background:#151522;border:1px solid #3b3153;border-radius:14px;padding:20px;box-shadow:0 18px 60px #090912cc}.modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.modal-head h3{color:#ec4899;font-size:17px}.modal-close{background:none;border:0;color:#aaa;font-size:22px;cursor:pointer}.detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.detail-item{background:#1b1b2b;border-radius:8px;padding:10px}.detail-item small{display:block;color:#888;font-size:11px;margin-bottom:4px}.detail-item b{font-size:13px;color:#eee;word-break:break-all}.detail-section{margin-top:14px}.detail-section h4{font-size:12px;color:#ec4899;margin-bottom:8px}.detail-list{display:grid;gap:6px}.detail-row{background:#1b1b2b;border-radius:7px;padding:8px 10px;font-size:12px;color:#c7c9d3}.empty-detail{color:#888;font-size:12px;padding:8px 0}
+.category-form{display:grid;gap:12px}.category-form label{font-size:12px;color:#b7bac7}.category-form select{width:100%;margin-top:5px;padding:9px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .log-tools{display:flex;gap:8px;align-items:center;margin-bottom:8px}.log-tools select{background:#0f0f1b;border:1px solid #39394d;color:#ddd;border-radius:6px;padding:5px 8px;font-size:11px}.log-box{background:#0a0a10;border:1px solid #1a1a2a;border-radius:10px;padding:12px;max-height:320px;overflow-y:auto;font-size:12px;font-family:monospace}
 .log-box .ts{color:#444}.log-box .ok{color:#10b981}.log-box .err{color:#ef4444}.log-box .info{color:#888}
 .log-box .warn{color:#f59e0b}.toast{position:fixed;right:24px;top:24px;z-index:20;min-width:260px;max-width:420px;padding:12px 16px;border-radius:9px;color:#fff;box-shadow:0 8px 28px #090912aa;font-size:13px}.toast.err{background:#b42318}.toast.warn{background:#b54708}.toast.ok{background:#087443}.toast.info{background:#3730a3}
@@ -127,6 +128,12 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 </div>
 <div class="modal hidden" id="channel-detail-modal" onclick="if(event.target===this)closeChannelDetail()">
   <div class="modal-panel"><div class="modal-head"><h3 id="channel-detail-title">频道详情</h3><button class="modal-close" onclick="closeChannelDetail()">×</button></div><div id="channel-detail-body"></div></div>
+</div>
+<div class="modal hidden" id="category-modal" onclick="if(event.target===this)closeCategoryModal()">
+  <div class="modal-panel"><div class="modal-head"><h3>修改资源站分类</h3><button class="modal-close" onclick="closeCategoryModal()">×</button></div>
+    <div class="category-form"><label id="category-station-name">资源站</label><label>选择分类<select id="station-category-select"></select></label></div>
+    <div class="modal-actions"><button class="btn btn-o" onclick="closeCategoryModal()">取消</button><button class="btn btn-p" onclick="saveStationCategory()">保存分类</button></div>
+  </div>
 </div>
 <div id="toast-area"></div>
 
@@ -206,10 +213,28 @@ function render(){
   document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>{
     const slug=encodeURIComponent(s.slug);
     const category=esc(s.category||'未分类');
-    return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${category} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}','${esc(s.category||'综合影视')}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
+    return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${category} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
   }).join('');
-}async function probeStation(slug){addLog('info','Probing '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
-async function editCategory(slug,current){const value=prompt('Category',current||'General');if(value&&value.trim())await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category:value.trim()});}
+}
+async function probeStation(slug){addLog('info','Probing '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
+function editCategory(slug){
+  const station=stations.find(s=>s.slug===decodeURIComponent(slug)||s.slug===slug);if(!station)return;
+  const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);
+  const categories=[...new Set(values)];
+  const select=document.getElementById('station-category-select');
+  select.innerHTML=categories.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if(categories.includes(station.category||'综合影视'))select.value=station.category||'综合影视';
+  document.getElementById('category-station-name').textContent=station.name;
+  document.getElementById('category-modal').dataset.slug=station.slug;
+  document.getElementById('category-modal').classList.remove('hidden');
+}
+function closeCategoryModal(){document.getElementById('category-modal').classList.add('hidden')}
+async function saveStationCategory(){
+  const modal=document.getElementById('category-modal'),slug=modal.dataset.slug,category=document.getElementById('station-category-select').value;
+  if(!slug||!category)return;
+  await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category});
+  closeCategoryModal();
+}
 async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
