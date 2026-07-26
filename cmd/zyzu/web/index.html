@@ -58,19 +58,19 @@ tr:hover td{background:#16162a}
 <div class="login-box" id="login">
   <h1>📡 ZYZU Client</h1>
   <div class="sub">连接到 zyzu server</div>
-  <label>鏈嶅姟鍣ㄥ湴鍧€</label>
+  <label>服务器地址</label>
   <input id="login-server" placeholder="http://your-vps:8080" value="" autofocus>
   <label>API Key</label>
   <input id="login-key" placeholder="your-api-key">
   <div class="err" id="login-err"></div>
-  <button class="btn" onclick="doLogin()">杩炴帴</button>
+  <button class="btn" onclick="doLogin()">连接</button>
   <div class="saved" id="saved-list"></div>
 </div>
 
 <div class="app" id="app">
   <div class="topbar">
     <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
-    <button onclick="logout()">鏂紑</button>
+    <button onclick="logout()">断开</button>
   </div>
   <div class="grid">
     <div class="card"><div class="n" id="s-total">-</div><div class="l">鎬荤珯鐐?/div></div>
@@ -79,9 +79,9 @@ tr:hover td{background:#16162a}
     <div class="card"><div class="n" id="s-running">-</div><div class="l">璋冨害</div></div>
   </div>
   <div class="toolbar">
-    <input id="search" placeholder="鎼滅储绔欏悕/API..." oninput="render()">
+    <input id="search" placeholder="搜索资源站名称或 API..." oninput="render()">
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
-      <input type="checkbox" id="show-blocked" onchange="render()">鏄剧ず宸插睆钄?/label>
+      <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽/label>
     <button class="btn btn-p" onclick="api('/api/trigger','POST')">采集</button>
     <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">抓取内容</button>
   </div>
@@ -98,8 +98,8 @@ tr:hover td{background:#16162a}
       <label>频道 ID<input id="channel-id" type="number" placeholder="-1001234567890"></label>
       <button class="btn btn-g" onclick="addChannel()">添加频道</button>
       <button class="btn btn-r" onclick="removeChannel()">删除频道</button>
-      <label>棰戦亾鏄犲皠 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
-      <button class="btn btn-p" onclick="saveChannels()">淇濆瓨</button>
+      <label>频道映射 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
+      <button class="btn btn-p" onclick="saveChannels()">保存</button>
     </div>
   </div>
   <div id="tab-config" class="hidden">
@@ -111,11 +111,11 @@ tr:hover td{background:#16162a}
       <button class="btn btn-g" onclick="telethonLogin()">登录 Telethon</button>
       <span id="telethon-status" class="info">未检查</span>
       <label>Bot Token<input id="cfg-token"></label>
-      <label>閲囬泦 Cron<input id="cfg-scrape"></label>
-      <label>鍐呭 Cron<input id="cfg-content-cron"></label>
-      <label>妯″紡 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
-      <label>鏉℃暟<input id="cfg-limit" type="number" value="10"></label>
-      <button class="btn btn-p" onclick="saveConfig()">淇濆瓨</button>
+      <label>采集计划<input id="cfg-scrape"></label>
+      <label>内容计划<input id="cfg-content-cron"></label>
+      <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
+      <label>抓取条数<input id="cfg-limit" type="number" value="10"></label>
+      <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
   </div>
   <div id="tab-log" class="hidden"><div class="log-box" id="log-el"></div></div>
@@ -137,12 +137,12 @@ function init(){
 async function doLogin(){
   const s=document.getElementById('login-server').value.trim();
   const k=document.getElementById('login-key').value.trim();
-  if(!s){showErr('璇疯緭鍏ユ湇鍔″櫒鍦板潃');return}
+  if(!s){showErr('请输入服务器地址');return}
   server=s;key=k;
   try{
     const r=await fetch(server+'/health');
     if(!r.ok)throw new Error('HTTP '+r.status);
-  }catch(e){showErr('杩炴帴澶辫触: '+e.message);return}
+  }catch(e){showErr('连接澶辫触: '+e.message);return}
   const saved=JSON.parse(localStorage.getItem(LS)||'[]');
   const name=server.replace(/https?:\/\//,'').split(':')[0];
   const exists=saved.findIndex(p=>p.server===server);
@@ -244,6 +244,7 @@ init();
 </script>
 </body>
 </html>
+
 
 
 
