@@ -156,10 +156,19 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 func normalizeTitle(title string) string {
 	title = strings.TrimSpace(title)
 	runes := []rune(title)
-	if len(runes) > 1 && len(runes)%2 == 0 {
-		half := len(runes) / 2
-		if strings.TrimSpace(string(runes[:half])) == strings.TrimSpace(string(runes[half:])) {
-			return strings.TrimSpace(string(runes[:half]))
+	// Check both the complete title and a prefixed title such as
+	// "code name name", which some APIs return when joining fields.
+	for prefix := 0; prefix < len(runes); prefix++ {
+		suffix := runes[prefix:]
+		if len(suffix) < 2 || len(suffix)%2 != 0 {
+			continue
+		}
+		half := len(suffix) / 2
+		if string(suffix[:half]) == string(suffix[half:]) {
+			clean := strings.TrimSpace(string(runes[:prefix]) + string(suffix[:half]))
+			if clean != "" {
+				return clean
+			}
 		}
 	}
 	return title
