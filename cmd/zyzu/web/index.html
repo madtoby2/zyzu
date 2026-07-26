@@ -262,7 +262,7 @@ async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
   try{const response=await fetch(server+path,opts);const r=await response.json();
-  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else {const msg=`${path} -> ${r.error||('HTTP '+response.status)}`;addLog('err',msg);showToast(msg,'err');}}catch(e){addLog('err',`${path} -> ${e.message}`);showToast(`${path} -> ${e.message}`,'err')}
+  if(r.ok){const msg=`操作成功：${method} ${path}`;addLog('ok',msg);showToast(msg,'ok');await loadStats();await loadStations();render();}else {const msg=`${path} -> ${r.error||('HTTP '+response.status)}`;addLog('err',msg);showToast(msg,'err');}}catch(e){const msg=`${path} -> ${e.message}`;addLog('err',msg);showToast(msg,'err')}
 }
 async function saveChannels(){
   try{await api('/api/config','PUT',{channel_map:channelMap});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道保存失败: '+e.message)}
@@ -292,7 +292,7 @@ function switchTab(name){
 function logStorageKey(){return LOG_PREFIX+(server||'unknown')}
 async function loadLogs(){try{const r=await fetch(server+'/api/event-log').then(r=>r.json());if(r.ok&&Array.isArray(r.data)){logEntries=r.data.map(x=>({type:x.level,msg:x.message,time:new Date(x.created_at).toLocaleTimeString(),at:new Date(x.created_at).getTime()}));renderLogs();return}}catch(e){}try{logEntries=JSON.parse(localStorage.getItem(logStorageKey())||'[]');if(!Array.isArray(logEntries))logEntries=[]}catch(e){logEntries=[]}renderLogs()}
 function persistLogs(){try{localStorage.setItem(logStorageKey(),JSON.stringify(logEntries.slice(-200)))}catch(e){}}
-function addLog(type,msg){logEntries.push({type,msg,time:new Date().toLocaleTimeString(),at:Date.now()});if(logEntries.length>200)logEntries.shift();persistLogs();renderLogs();if(server){fetch(server+'/api/event-log',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify({level:type,message:msg})}).catch(()=>{})}}
+function addLog(type,msg,popup=true){logEntries.push({type,msg,time:new Date().toLocaleTimeString(),at:Date.now()});if(logEntries.length>200)logEntries.shift();persistLogs();renderLogs();if(popup)showToast(msg,type==='err'?'err':type==='ok'?'ok':'info');if(server){fetch(server+'/api/event-log',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify({level:type,message:msg})}).catch(()=>{})}}
 function renderLogs(){const el=document.getElementById('log-el');if(!el)return;const filter=document.getElementById('log-filter')?.value||'all';el.innerHTML=logEntries.filter(x=>filter==='all'||x.type===filter).map(x=>`<div><span class="ts">${esc(x.time)}</span> <span class="${x.type}">${esc(x.msg)}</span></div>`).join('');el.scrollTop=el.scrollHeight}
 async function clearLogs(){try{await fetch(server+'/api/event-log',{method:'DELETE',headers:{'X-API-Key':key}})}catch(e){}logEntries=[];persistLogs();renderLogs()}
 function showToast(msg,type='info'){const area=document.getElementById('toast-area');if(!area)return;const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;area.appendChild(el);setTimeout(()=>el.remove(),4500)}
