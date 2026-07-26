@@ -3,7 +3,7 @@ from telethon import TelegramClient
 
 async def main():
     req = json.loads(sys.stdin.read())
-    client = TelegramClient(os.environ.get('ZYZU_TELETHON_SESSION', 'telethon'), int(os.environ['ZYZU_API_ID']), os.environ['ZYZU_API_HASH'])
+    client = TelegramClient(os.environ.get('ZYZU_TELETHON_SESSION', 'telethon'), int(os.environ.get('ZYZU_API_ID', '11535358')), os.environ.get('ZYZU_API_HASH', '33d372962fadb01df47e6ceed4e33cd6'))
     await client.connect()
     if not await client.is_user_authorized():
         raise RuntimeError('telethon session is not authorized')
