@@ -283,7 +283,7 @@ func (p *Poster) PostVideoSplit(items []content.ContentItem) int {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
-		_, err := p.PostVideo("", caption, cat) // placeholder — scheduler handles download
+		_, err := p.PostVideo("", caption, cat, "") // placeholder — scheduler handles download
 		_ = err
 		posted++
 		time.Sleep(2 * time.Second)
