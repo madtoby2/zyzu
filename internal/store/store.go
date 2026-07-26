@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -146,9 +147,10 @@ func (s *Store) ClearEventHistory() error {
 func (s *Store) UpsertStation(st *Station) (bool, error) {
 	now := time.Now()
 	var existingID int64
+	var existingCategory string
 	var existingBlacklisted bool
-	err := s.db.QueryRow("SELECT id, blacklisted FROM stations WHERE slug = ?", st.Slug).
-		Scan(&existingID, &existingBlacklisted)
+	err := s.db.QueryRow("SELECT id, category, blacklisted FROM stations WHERE slug = ?", st.Slug).
+		Scan(&existingID, &existingCategory, &existingBlacklisted)
 	if err == sql.ErrNoRows {
 		res, err := s.db.Exec(`
 			INSERT INTO stations (slug, name, category, tags, api_url, interface_type,
@@ -170,6 +172,11 @@ func (s *Store) UpsertStation(st *Station) (bool, error) {
 	}
 	st.ID = existingID
 	st.Blacklisted = existingBlacklisted
+	// A category changed in the dashboard is user-owned. Do not let a later
+	// scrape overwrite it with the source site's generic category.
+	if strings.TrimSpace(existingCategory) != "" {
+		st.Category = existingCategory
+	}
 	_, err = s.db.Exec(`
 		UPDATE stations SET name=?, category=?, tags=?, api_url=?, interface_type=?,
 			resource_count=?, availability=?, response_time=?, description=?, last_seen=?
