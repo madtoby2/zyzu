@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -56,56 +56,56 @@ tr:hover td{background:#16162a}
 </head>
 <body>
 <div class="login-box" id="login">
-  <h1>📡 ZYZU Client</h1>
-  <div class="sub">连接到 zyzu server</div>
-  <label>服务器地址</label>
+  <h1>馃摗 ZYZU Client</h1>
+  <div class="sub">杩炴帴鍒?zyzu server</div>
+  <label>鏈嶅姟鍣ㄥ湴鍧€</label>
   <input id="login-server" placeholder="http://your-vps:8080" value="" autofocus>
   <label>API Key</label>
   <input id="login-key" placeholder="your-api-key">
   <div class="err" id="login-err"></div>
-  <button class="btn" onclick="doLogin()">连接</button>
+  <button class="btn" onclick="doLogin()">杩炴帴</button>
   <div class="saved" id="saved-list"></div>
 </div>
 
 <div class="app" id="app">
   <div class="topbar">
-    <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
-    <button onclick="logout()">断开</button>
+    <div><h1>馃摗 ZYZU</h1><div class="server" id="app-server">-</div></div>
+    <button onclick="logout()">鏂紑</button>
   </div>
   <div class="grid">
-    <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
-    <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽</div></div>
-    <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送</div></div>
-    <div class="card"><div class="n" id="s-running">-</div><div class="l">调度</div></div>
+    <div class="card"><div class="n" id="s-total">-</div><div class="l">鎬荤珯鐐?/div></div>
+    <div class="card"><div class="n" id="s-blocked">-</div><div class="l">宸插睆钄?/div></div>
+    <div class="card"><div class="n" id="s-posted">-</div><div class="l">宸叉帹閫?/div></div>
+    <div class="card"><div class="n" id="s-running">-</div><div class="l">璋冨害</div></div>
   </div>
   <div class="toolbar">
-    <input id="search" placeholder="搜索站名/API..." oninput="render()">
+    <input id="search" placeholder="鎼滅储绔欏悕/API..." oninput="render()">
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
-      <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽</label>
-    <button class="btn btn-p" onclick="api('/api/trigger','POST')">🔄 采集</button>
-    <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">🎬 抓内容</button>
+      <input type="checkbox" id="show-blocked" onchange="render()">鏄剧ず宸插睆钄?/label>
+    <button class="btn btn-p" onclick="api('/api/trigger','POST')">馃攧 閲囬泦</button>
+    <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">馃幀 鎶撳唴瀹?/button>
   </div>
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('stations')">资源站</button>
-    <button class="tab" onclick="switchTab('channels')">频道</button>
-    <button class="tab" onclick="switchTab('config')">配置</button>
-    <button class="tab" onclick="switchTab('log')">日志</button>
+    <button class="tab active" onclick="switchTab('stations')">璧勬簮绔?/button>
+    <button class="tab" onclick="switchTab('channels')">棰戦亾</button>
+    <button class="tab" onclick="switchTab('config')">閰嶇疆</button>
+    <button class="tab" onclick="switchTab('log')">鏃ュ織</button>
   </div>
-  <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
+  <div id="tab-stations"><table><thead><tr><th>鍚嶇О</th><th>璧勬簮閲?/th><th>鍙敤鐜?/th><th>鍝嶅簲</th><th>鎿嶄綔</th></tr></thead><tbody id="station-list"></tbody></table></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
-      <label>频道映射 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
-      <button class="btn btn-p" onclick="saveChannels()">保存</button>
+      <label>棰戦亾鏄犲皠 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
+      <button class="btn btn-p" onclick="saveChannels()">淇濆瓨</button>
     </div>
   </div>
   <div id="tab-config" class="hidden">
     <div class="config-form">
       <label>Bot Token<input id="cfg-token"></label>
-      <label>采集 Cron<input id="cfg-scrape"></label>
-      <label>内容 Cron<input id="cfg-content-cron"></label>
-      <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
-      <label>条数<input id="cfg-limit" type="number" value="10"></label>
-      <button class="btn btn-p" onclick="saveConfig()">保存</button>
+      <label>閲囬泦 Cron<input id="cfg-scrape"></label>
+      <label>鍐呭 Cron<input id="cfg-content-cron"></label>
+      <label>妯″紡 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
+      <label>鏉℃暟<input id="cfg-limit" type="number" value="10"></label>
+      <button class="btn btn-p" onclick="saveConfig()">淇濆瓨</button>
     </div>
   </div>
   <div id="tab-log" class="hidden"><div class="log-box" id="log-el"></div></div>
@@ -119,7 +119,7 @@ function init(){
   const saved=JSON.parse(localStorage.getItem(LS)||'[]');
   const el=document.getElementById('saved-list');
   if(saved.length){
-    el.innerHTML='已保存: '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
+    el.innerHTML='宸蹭繚瀛? '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
   }
   const last=JSON.parse(localStorage.getItem('zyzu_last')||'null');
   if(last){document.getElementById('login-server').value=last.server||'';document.getElementById('login-key').value=last.key||'';}
@@ -127,12 +127,12 @@ function init(){
 async function doLogin(){
   const s=document.getElementById('login-server').value.trim();
   const k=document.getElementById('login-key').value.trim();
-  if(!s){showErr('请输入服务器地址');return}
+  if(!s){showErr('璇疯緭鍏ユ湇鍔″櫒鍦板潃');return}
   server=s;key=k;
   try{
     const r=await fetch(server+'/health');
     if(!r.ok)throw new Error('HTTP '+r.status);
-  }catch(e){showErr('连接失败: '+e.message);return}
+  }catch(e){showErr('杩炴帴澶辫触: '+e.message);return}
   const saved=JSON.parse(localStorage.getItem(LS)||'[]');
   const name=server.replace(/https?:\/\//,'').split(':')[0];
   const exists=saved.findIndex(p=>p.server===server);
@@ -156,8 +156,9 @@ function logout(){
 }
 function showErr(m){const e=document.getElementById('login-err');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 async function loadStats(){
+  if(!server)return;
   try{const r=await fetch(server+'/api/stations/stats').then(r=>r.json());if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted}
-  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok)document.getElementById('s-running').textContent=s.data.running?'运行中':'空闲'}catch(e){}
+  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok)document.getElementById('s-running').textContent=s.data.running?'RUNNING':'IDLE'}catch(e){}
 }
 async function loadStations(){
   try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data}catch(e){}
@@ -170,18 +171,18 @@ async function loadConfig(){
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
-  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>`<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${esc(s.category||'未分类')} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" title="推送" onclick="api('/api/stations/${s.slug}/post','POST')">📤</button> <button class="btn btn-o" title="测活" onclick="probeStation('${s.slug}')">📡</button> <button class="btn btn-o" title="修改分类" onclick="editCategory('${s.slug}','${esc(s.category||'综合影视')}')">🏷️</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'🔓':'🚫'}</button></td></tr>`).join('');
+  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>`<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${esc(s.category||'鏈垎绫?)} 路 ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}鏉?/td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" title="鎺ㄩ€? onclick="api('/api/stations/${s.slug}/post','POST')">馃摛</button> <button class="btn btn-o" title="娴嬫椿" onclick="probeStation('${s.slug}')">馃摗</button> <button class="btn btn-o" title="淇敼鍒嗙被" onclick="editCategory('${s.slug}','${esc(s.category||'缁煎悎褰辫')}')">馃彿锔?/button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'馃敁':'馃毇'}</button></td></tr>`).join('');
 }
-async function probeStation(slug){addLog('info','正在测活 '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
-async function editCategory(slug,current){const value=prompt('输入分类（电影 / 电视剧 / 动漫 / 成人 / 综合影视）',current||'综合影视');if(value&&value.trim())await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category:value.trim()});}
+async function probeStation(slug){addLog('info','姝ｅ湪娴嬫椿 '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
+async function editCategory(slug,current){const value=prompt('杈撳叆鍒嗙被锛堢數褰?/ 鐢佃鍓?/ 鍔ㄦ极 / 鎴愪汉 / 缁煎悎褰辫锛?,current||'缁煎悎褰辫');if(value&&value.trim())await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category:value.trim()});}
 async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
   try{const response=await fetch(server+path,opts);const r=await response.json();
-  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} → ${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} → ${e.message}`)}
+  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} 鈫?${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} 鈫?${e.message}`)}
 }
 async function saveChannels(){
-  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('格式错误');await api('/api/config','PUT',{channel_map:map});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道设置保存失败: '+e.message)}
+  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('鏍煎紡閿欒');await api('/api/config','PUT',{channel_map:map});addLog('ok','棰戦亾璁剧疆宸蹭繚瀛?)}catch(e){addLog('err','棰戦亾璁剧疆淇濆瓨澶辫触: '+e.message)}
 }
 async function saveConfig(){
   await api('/api/config','PUT',{
@@ -210,12 +211,12 @@ function connectWS(){
   ws.onmessage=e=>{
     const msg=JSON.parse(e.data);
     switch(msg.type){
-      case'scrape_triggered':addLog('info','🔄 采集启动');break;
-      case'scrape_complete':addLog('ok',`✅ 采集完成: ${msg.data.new_count||0}新 ${msg.data.upd_count||0}更新`);loadStats();break;
-      case'content_triggered':addLog('info','🎬 内容抓取启动');break;
-      case'manual_post':addLog('ok',`📤 ${msg.data.name} → MSG#${msg.data.message_id}`);break;
-      case'blacklist_changed':addLog('info',`🚫 ${msg.data.slug}: ${msg.data.blacklisted?'屏蔽':'解除'}`);loadStats();loadStations();render();break;
-      case'config_updated':addLog('ok','⚙️ 配置已更新');loadConfig();break;
+      case'scrape_triggered':addLog('info','馃攧 閲囬泦鍚姩');break;
+      case'scrape_complete':addLog('ok',`鉁?閲囬泦瀹屾垚: ${msg.data.new_count||0}鏂?${msg.data.upd_count||0}鏇存柊`);loadStats();break;
+      case'content_triggered':addLog('info','馃幀 鍐呭鎶撳彇鍚姩');break;
+      case'manual_post':addLog('ok',`馃摛 ${msg.data.name} 鈫?MSG#${msg.data.message_id}`);break;
+      case'blacklist_changed':addLog('info',`馃毇 ${msg.data.slug}: ${msg.data.blacklisted?'灞忚斀':'瑙ｉ櫎'}`);loadStats();loadStations();render();break;
+      case'config_updated':addLog('ok','鈿欙笍 閰嶇疆宸叉洿鏂?);loadConfig();break;
     }
   };
   ws.onclose=()=>setTimeout(connectWS,3000);
