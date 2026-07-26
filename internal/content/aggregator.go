@@ -43,15 +43,17 @@ type APIDetailResp struct {
 
 // ContentItem is our unified content format.
 type ContentItem struct {
-	Title    string   `json:"title"`
-	TypeName string   `json:"type_name"`
-	Category string   `json:"category"`
-	Episodes []string `json:"episodes"`
-	CoverURL string   `json:"cover_url"`
-	Source   string   `json:"source"`
-	VodID    int      `json:"vod_id"`
-	VodTime  string   `json:"vod_time"`
-	Intro    string   `json:"intro"`
+	Title     string   `json:"title"`
+	TypeName  string   `json:"type_name"`
+	Remarks   string   `json:"remarks"`
+	Category  string   `json:"category"`
+	Episodes  []string `json:"episodes"`
+	CoverURL  string   `json:"cover_url"`
+	Source    string   `json:"source"`
+	SourceURL string   `json:"source_url"`
+	VodID     int      `json:"vod_id"`
+	VodTime   string   `json:"vod_time"`
+	Intro     string   `json:"intro"`
 }
 
 // Aggregator fetches content from CMS APIs.
@@ -92,14 +94,16 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 				seen[item.VodID] = true
 
 				ci := ContentItem{
-					Title:    item.VodName,
-					TypeName: item.TypeName,
-					Category: Classify(item.TypeName, nil),
-					CoverURL: item.VodPic,
-					Source:   src.Name,
-					VodID:    item.VodID,
-					VodTime:  item.VodTime,
-					Intro:    item.VodContent,
+					Title:     item.VodName,
+					TypeName:  item.TypeName,
+					Remarks:   item.VodRemarks,
+					Category:  Classify(item.TypeName, nil),
+					CoverURL:  item.VodPic,
+					Source:    src.Name,
+					SourceURL: src.APIURL,
+					VodID:     item.VodID,
+					VodTime:   item.VodTime,
+					Intro:     item.VodContent,
 				}
 
 				// Fetch detail for play URLs (best-effort)
@@ -108,6 +112,9 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					ci.Episodes = parseEpisodes(detail[0].VodPlayURL)
 					if detail[0].VodContent != "" {
 						ci.Intro = detail[0].VodContent
+					}
+					if detail[0].VodRemarks != "" {
+						ci.Remarks = detail[0].VodRemarks
 					}
 				}
 

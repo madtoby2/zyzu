@@ -249,7 +249,7 @@ func formatVideoCaption(format string, item content.ContentItem) string {
 	if item.VodID > 0 {
 		code = fmt.Sprintf("%d", item.VodID)
 	}
-	return strings.NewReplacer("{code}", code, "{title}", escapeHTML(item.Title), "{category}", escapeHTML(item.Category), "{type}", escapeHTML(item.TypeName), "{source}", escapeHTML(item.Source), "{intro}", escapeHTML(item.Intro)).Replace(format)
+	return strings.NewReplacer("{code}", code, "{id}", code, "{title}", escapeHTML(item.Title), "{name}", escapeHTML(item.Title), "{category}", escapeHTML(item.Category), "{type}", escapeHTML(item.TypeName), "{remarks}", escapeHTML(item.Remarks), "{source}", escapeHTML(item.Source), "{source_url}", escapeHTML(item.SourceURL), "{intro}", escapeHTML(item.Intro), "{cover}", escapeHTML(item.CoverURL), "{updated_at}", escapeHTML(item.VodTime)).Replace(format)
 }
 
 func (s *Scheduler) runPhotoPipeline(items []content.ContentItem) int {

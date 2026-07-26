@@ -125,7 +125,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
       <label>抓取条数<input id="cfg-limit" type="number" value="10"></label>
       <label>视频资源文案<textarea id="cfg-video-format" rows="5" placeholder="[资源码] {code}\n{title}\n分类：{category}\n来源：{source}"></textarea></label>
-      <small style="display:block;color:#888;margin-top:-6px">视频变量：{code} 资源码、{title} 标题、{intro} 简介、{category} 分类、{type} 类型、{source} 来源。</small>
+      <small style="display:block;color:#888;margin-top:-6px">视频变量：{code}/{id} 资源码、{title}/{name} 标题、{intro} 简介、{remarks} 备注、{category} 分类、{type} 类型、{source} 来源、{source_url} 接口、{cover} 封面、{updated_at} 更新时间。</small>
       <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
   </div>
