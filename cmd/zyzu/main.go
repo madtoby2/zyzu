@@ -43,11 +43,11 @@ func main() {
 	}
 	defer st.Close()
 
-	p := poster.New(cfg.BotToken, cfg.PickChannel)
+	p := poster.New(cfg.PickChannel)
 	scr := scraper.New()
 	sched := scheduler.New(st, scr, p, cfg)
 
-	if cfg.BotToken != "" && cfg.HasAnyChannel() {
+	if cfg.HasAnyChannel() {
 		if err := sched.Start(); err != nil {
 			log.Printf("[zyzu] scheduler error: %v", err)
 		}

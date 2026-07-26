@@ -3,11 +3,13 @@ package poster
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,32 +18,52 @@ import (
 	"github.com/madtoby2/zyzu/internal/store"
 )
 
-const tgAPI = "https://api.telegram.org/bot"
-
 type Poster struct {
-	token       string
 	pickChannel func(cat string) int64
 	client      *http.Client
 }
 
-func New(token string, pick func(string) int64) *Poster {
+func New(pick func(string) int64) *Poster {
 	return &Poster{
-		token:       token,
 		pickChannel: pick,
 		client:      &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
 func (p *Poster) PostStation(st *store.Station, format string, action string) (int, error) {
-	return p.sendMessage(p.formatStation(st, format, action), "Markdown", p.pickChannel("default"))
+	return p.sendTelethon(p.formatStation(st, format, action), p.pickChannel("default"))
 }
 
 func (p *Poster) PostSimple(text string) (int, error) {
-	return p.sendMessage(text, "", p.pickChannel("default"))
+	return p.sendTelethon(text, p.pickChannel("default"))
 }
 
 func (p *Poster) PostHTML(text string) (int, error) {
-	return p.sendMessage(text, "HTML", p.pickChannel("default"))
+	return p.sendTelethon(text, p.pickChannel("default"))
+}
+
+func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
+	python := os.Getenv("PYTHON_BIN")
+	if python == "" {
+		python = "python3"
+	}
+	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
+	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"chat_id":%d,"text":%q}`, chatID, text))
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(string(out)))
+	}
+	var result struct {
+		MessageID int    `json:"message_id"`
+		Error     string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, err
+	}
+	if result.Error != "" {
+		return 0, errors.New(result.Error)
+	}
+	return result.MessageID, nil
 }
 
 func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
@@ -61,7 +83,8 @@ func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
 	io.Copy(part, file)
 	w.Close()
 
-	req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
+	return 0, errors.New("Telethon video upload bridge not implemented")
+	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
 	resp, err := p.client.Do(req)
@@ -81,7 +104,7 @@ func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
 	if !result.OK {
 		return 0, fmt.Errorf("sendVideo failed")
 	}
-	return result.Result.MessageID, nil
+	return result.Result.MessageID, nil */
 }
 
 func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {
@@ -91,8 +114,9 @@ func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {
 		"caption":    caption,
 		"parse_mode": "HTML",
 	}
-	data, _ := json.Marshal(body)
-	req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendPhoto", bytes.NewReader(data))
+	_, _ = json.Marshal(body)
+	return 0, errors.New("Telethon photo upload bridge not implemented")
+	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendPhoto", bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -107,7 +131,7 @@ func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {
 		} `json:"result"`
 	}
 	json.Unmarshal(respData, &result)
-	return result.Result.MessageID, nil
+	return result.Result.MessageID, nil */
 }
 
 func (p *Poster) PostContentDigest(items []content.ContentItem, title, category string) (int, error) {
@@ -228,37 +252,49 @@ func (p *Poster) formatStation(st *store.Station, format string, action string) 
 }
 
 func (p *Poster) sendMessage(text string, parseMode string, chatID int64) (int, error) {
-	if chatID == 0 {
-		return 0, nil
-	}
-	body := map[string]interface{}{
-		"chat_id": chatID,
-		"text":    text,
-	}
-	if parseMode != "" {
-		body["parse_mode"] = parseMode
-		body["disable_web_page_preview"] = true
-	}
-	data, _ := json.Marshal(body)
-	req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendMessage", bytes.NewReader(data))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	respData, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	var result struct {
-		OK     bool `json:"ok"`
-		Result struct {
-			MessageID int `json:"message_id"`
-		} `json:"result"`
-	}
-	json.Unmarshal(respData, &result)
-	if !result.OK {
-		return 0, fmt.Errorf("TG API error")
-	}
-	return result.Result.MessageID, nil
+	return p.sendTelethon(text, chatID)
+	/*
+	   	if chatID == 0 {
+	   		return 0, nil
+	   	}
+
+	   	body := map[string]interface{}{
+	   		"chat_id": chatID,
+	   		"text":    text,
+	   	}
+
+	   	if parseMode != "" {
+	   		body["parse_mode"] = parseMode
+	   		body["disable_web_page_preview"] = true
+	   	}
+
+	   data, _ := json.Marshal(body)
+	   req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendMessage", bytes.NewReader(data))
+	   req.Header.Set("Content-Type", "application/json")
+	   resp, err := p.client.Do(req)
+
+	   	if err != nil {
+	   		return 0, err
+	   	}
+
+	   defer resp.Body.Close()
+	   respData, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+
+	   	var result struct {
+	   		OK     bool `json:"ok"`
+	   		Result struct {
+	   			MessageID int `json:"message_id"`
+	   		} `json:"result"`
+	   	}
+
+	   json.Unmarshal(respData, &result)
+
+	   	if !result.OK {
+	   		return 0, fmt.Errorf("TG API error")
+	   	}
+
+	   return result.Result.MessageID, nil
+	*/
 }
 
 func escapeMD(s string) string {
