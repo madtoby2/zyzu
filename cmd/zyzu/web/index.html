@@ -56,8 +56,8 @@ tr:hover td{background:#16162a}
 </head>
 <body>
 <div class="login-box" id="login">
-  <h1>馃摗 ZYZU Client</h1>
-  <div class="sub">杩炴帴鍒?zyzu server</div>
+  <h1>📡 ZYZU Client</h1>
+  <div class="sub">连接到 zyzu server</div>
   <label>鏈嶅姟鍣ㄥ湴鍧€</label>
   <input id="login-server" placeholder="http://your-vps:8080" value="" autofocus>
   <label>API Key</label>
@@ -69,7 +69,7 @@ tr:hover td{background:#16162a}
 
 <div class="app" id="app">
   <div class="topbar">
-    <div><h1>馃摗 ZYZU</h1><div class="server" id="app-server">-</div></div>
+    <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
     <button onclick="logout()">鏂紑</button>
   </div>
   <div class="grid">
@@ -82,16 +82,16 @@ tr:hover td{background:#16162a}
     <input id="search" placeholder="鎼滅储绔欏悕/API..." oninput="render()">
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
       <input type="checkbox" id="show-blocked" onchange="render()">鏄剧ず宸插睆钄?/label>
-    <button class="btn btn-p" onclick="api('/api/trigger','POST')">馃攧 閲囬泦</button>
-    <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">馃幀 鎶撳唴瀹?/button>
+    <button class="btn btn-p" onclick="api('/api/trigger','POST')">采集</button>
+    <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">抓取内容</button>
   </div>
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('stations')">璧勬簮绔?/button>
-    <button class="tab" onclick="switchTab('channels')">棰戦亾</button>
-    <button class="tab" onclick="switchTab('config')">閰嶇疆</button>
-    <button class="tab" onclick="switchTab('log')">鏃ュ織</button>
+    <button class="tab active" onclick="switchTab('stations')">资源站</button>
+    <button class="tab" onclick="switchTab('channels')">频道</button>
+    <button class="tab" onclick="switchTab('config')">配置</button>
+    <button class="tab" onclick="switchTab('log')">日志</button>
   </div>
-  <div id="tab-stations"><table><thead><tr><th>鍚嶇О</th><th>璧勬簮閲?/th><th>鍙敤鐜?/th><th>鍝嶅簲</th><th>鎿嶄綔</th></tr></thead><tbody id="station-list"></tbody></table></div>
+  <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
       <label>添加频道（分类）<input id="channel-category" placeholder="adult"></label>
