@@ -78,8 +78,12 @@ func main() {
 		log.Fatalf("fs.Sub web: %v", err)
 	}
 	fileServer := http.FileServer(http.FS(webSub))
-	r.Get("/", fileServer.ServeHTTP)
-	r.NotFound(fileServer.ServeHTTP)
+	serveHTML := func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fileServer.ServeHTTP(w, req)
+	}
+	r.Get("/", serveHTML)
+	r.NotFound(serveHTML)
 
 	go func() {
 		sig := make(chan os.Signal, 1)
