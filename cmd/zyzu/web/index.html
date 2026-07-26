@@ -73,9 +73,9 @@ tr:hover td{background:#16162a}
     <button onclick="logout()">断开</button>
   </div>
   <div class="grid">
-    <div class="card"><div class="n" id="s-total">-</div><div class="l">鎬荤珯鐐?/div></div>
-    <div class="card"><div class="n" id="s-blocked">-</div><div class="l">宸插睆钄?/div></div>
-    <div class="card"><div class="n" id="s-posted">-</div><div class="l">宸叉帹閫?/div></div>
+    <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点/div></div>
+    <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽/div></div>
+    <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送/div></div>
     <div class="card"><div class="n" id="s-running">-</div><div class="l">璋冨害</div></div>
   </div>
   <div class="toolbar">
@@ -129,7 +129,7 @@ function init(){
   const saved=JSON.parse(localStorage.getItem(LS)||'[]');
   const el=document.getElementById('saved-list');
   if(saved.length){
-    el.innerHTML='宸蹭繚瀛? '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
+    el.innerHTML='已保存 '+saved.map((p,i)=>`<span onclick="fillLogin('${esc(p.server)}','${esc(p.key)}')">${esc(p.name)}</span>`).join('');
   }
   const last=JSON.parse(localStorage.getItem('zyzu_last')||'null');
   if(last){document.getElementById('login-server').value=last.server||'';document.getElementById('login-key').value=last.key||'';}
@@ -229,11 +229,11 @@ function connectWS(){
   ws.onmessage=e=>{
     const msg=JSON.parse(e.data);
     switch(msg.type){
-      case'scrape_triggered':addLog('info','馃攧 閲囬泦鍚姩');break;
-      case'scrape_complete':addLog('ok',`鉁?閲囬泦瀹屾垚: ${msg.data.new_count||0}鏂?${msg.data.upd_count||0}鏇存柊`);loadStats();break;
-      case'content_triggered':addLog('info','馃幀 鍐呭鎶撳彇鍚姩');break;
-      case'manual_post':addLog('ok',`馃摛 ${msg.data.name} 鈫?MSG#${msg.data.message_id}`);break;
-      case'blacklist_changed':addLog('info',`馃毇 ${msg.data.slug}: ${msg.data.blacklisted?'灞忚斀':'瑙ｉ櫎'}`);loadStats();loadStations();render();break;
+      case'scrape_triggered':addLog('info','采集已启动');break;
+      case'scrape_complete':addLog('ok',`采集完成： ${msg.data.new_count||0}新增 ${msg.data.upd_count||0}更新 `);loadStats();break;
+      case'content_triggered':addLog('info','内容抓取已启动');break;
+      case'manual_post':addLog('ok',`已推送 ${msg.data.name}，消息 #${msg.data.message_id}`);break;
+      case'blacklist_changed':addLog('info',`${msg.data.slug}： ${msg.data.blacklisted?'已屏蔽':'已解除屏蔽'}`);loadStats();loadStations();render();break;
       case'config_updated':addLog('ok','Config updated');loadConfig();break;
     }
   };
@@ -244,6 +244,7 @@ init();
 </script>
 </body>
 </html>
+
 
 
 
