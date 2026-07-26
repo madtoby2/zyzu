@@ -228,7 +228,7 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
 
-		_, err = s.Poster.PostVideo(filePath, caption, cat)
+		_, err = s.Poster.PostVideo(filePath, caption, cat, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			continue

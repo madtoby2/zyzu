@@ -86,11 +86,19 @@ func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 	return result.MessageID, nil
 }
 
-func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
+func (p *Poster) PostVideo(filePath, caption, category string, coverURL string) (int, error) {
 	if _, err := os.Stat(filePath); err != nil {
 		return 0, fmt.Errorf("open video: %w", err)
 	}
-	return p.sendTelethonVideo(filePath, caption, p.pickChannel(category))
+	thumbPath := ""
+	if coverURL != "" {
+		thumbPath = filePath + ".jpg"
+		if err := downloadCover(coverURL, thumbPath); err != nil {
+			thumbPath = ""
+		}
+		defer os.Remove(thumbPath)
+	}
+	return p.sendTelethonVideo(filePath, caption, p.pickChannel(category), thumbPath)
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
@@ -114,7 +122,7 @@ func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
 	return result.Result.MessageID, nil */
 }
 
-func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64) (int, error) {
+func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumbPath string) (int, error) {
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
 		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
@@ -123,7 +131,7 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64) (int,
 			python = "python3"
 		}
 	}
-	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q}`, chatID, filePath, caption)
+	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"thumb_path":%q}`, chatID, filePath, caption, thumbPath)
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = strings.NewReader(payload)
 	out, err := cmd.CombinedOutput()
@@ -141,6 +149,24 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64) (int,
 		return 0, errors.New(result.Error)
 	}
 	return result.MessageID, nil
+}
+
+func downloadCover(rawURL, path string) error {
+	resp, err := http.Get(rawURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("cover HTTP %d", resp.StatusCode)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.ReadFrom(resp.Body)
+	return err
 }
 
 func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {
