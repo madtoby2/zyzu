@@ -159,6 +159,16 @@ func (s *Store) SetBlacklist(slug string, blacklisted bool) error {
 	return err
 }
 
+func (s *Store) SetCategory(slug, category string) error {
+	_, err := s.db.Exec("UPDATE stations SET category=? WHERE slug=?", category, slug)
+	return err
+}
+
+func (s *Store) UpdateHealth(slug, availability, responseTime string) error {
+	_, err := s.db.Exec("UPDATE stations SET availability=?, response_time=? WHERE slug=?", availability, responseTime, slug)
+	return err
+}
+
 func (s *Store) HasBeenPosted(slug string, within time.Duration) (bool, error) {
 	var count int
 	err := s.db.QueryRow(

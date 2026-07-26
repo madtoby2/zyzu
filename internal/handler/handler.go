@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/madtoby2/zyzu/internal/config"
@@ -35,6 +37,8 @@ func (h *Handler) Register(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(h.authMiddleware)
 		r.Post("/api/stations/{slug}/blacklist", h.toggleBlacklist)
+		r.Post("/api/stations/{slug}/category", h.updateCategory)
+		r.Post("/api/stations/{slug}/probe", h.probeStation)
 		r.Post("/api/stations/{slug}/post", h.manualPost)
 		r.Post("/api/trigger", h.triggerScrape)
 		r.Post("/api/content/trigger", h.triggerContent)
@@ -42,6 +46,60 @@ func (h *Handler) Register(r chi.Router) {
 		r.Put("/api/config", h.updateConfig)
 		r.Get("/ws", h.hub.HandleWS)
 	})
+}
+
+func (h *Handler) updateCategory(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	var body struct {
+		Category string `json:"category"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, "invalid body", 400)
+		return
+	}
+	body.Category = strings.TrimSpace(body.Category)
+	if body.Category == "" {
+		jsonError(w, "category required", 400)
+		return
+	}
+	if err := h.store.SetCategory(slug, body.Category); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	h.hub.Broadcast("category_changed", map[string]string{"slug": slug, "category": body.Category})
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	st, err := h.store.GetStationBySlug(slug)
+	if err != nil {
+		jsonError(w, "station not found: "+err.Error(), 404)
+		return
+	}
+	// A lightweight probe reuses the station API URL and records a clear result.
+	start := time.Now()
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, st.APIURL, nil)
+	if err != nil {
+		jsonError(w, err.Error(), 400)
+		return
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonError(w, "probe failed: "+err.Error(), 502)
+		return
+	}
+	resp.Body.Close()
+	availability := "0%"
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		availability = "100%"
+	}
+	if err := h.store.UpdateHealth(slug, availability, fmt.Sprintf("%dms", time.Since(start).Milliseconds())); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	jsonOK(w, map[string]string{"availability": availability, "response_time": fmt.Sprintf("%dms", time.Since(start).Milliseconds())})
 }
 
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
