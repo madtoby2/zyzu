@@ -102,7 +102,6 @@ tr:hover td{background:#16162a}
       <button class="btn btn-g" onclick="addChannel()">添加频道</button>
       <button class="btn btn-r" onclick="removeChannel()">删除频道</button>
       <div class="channel-cards" id="channel-cards"><div class="channel-card">正在加载频道...</div></div>
-      <textarea id="cfg-channels" rows="6" hidden>{"default":[],"adult":[],"movie":[],"anime":[]}</textarea>
       <button class="btn btn-p" onclick="saveChannels()">保存频道设置</button>
     </div>
   </div>
@@ -126,7 +125,7 @@ tr:hover td{background:#16162a}
 </div>
 
 <script>
-let server='',key='',stations=[],ws;
+let server='',key='',stations=[],ws,channelMap={};
 const LS='zyzu_profiles';
 
 function init(){
@@ -180,9 +179,9 @@ async function loadStations(){
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
   if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
-  if(c.channel_map)document.getElementById('cfg-channels').value=JSON.stringify(c.channel_map,null,2);else if(c.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:c.channel_ids},null,2);renderChannelCards()}}catch(e){}
+  if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};renderChannelCards()}}catch(e){}
 }
-function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;let map={};try{map=JSON.parse(document.getElementById('cfg-channels').value||'{}')}catch(e){};const rows=Object.entries(map).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card">暂无频道，请添加</div>'}
+function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card">暂无频道，请添加</div>'}
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
@@ -200,7 +199,7 @@ async function api(path,method='GET',body=null){
   if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} -> ${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} -> ${e.message}`)}
 }
 async function saveChannels(){
-  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('invalid format');await api('/api/config','PUT',{channel_map:map});addLog('ok','Channel settings saved')}catch(e){addLog('err','Channel save failed: '+e.message)}
+  try{await api('/api/config','PUT',{channel_map:channelMap});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道保存失败: '+e.message)}
 }
 async function addChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','POST',{category,id});await loadConfig();}
 async function removeChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','DELETE',{category,id});await loadConfig();}
