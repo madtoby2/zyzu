@@ -49,7 +49,7 @@ func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 	}
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"chat_id":%d,"text":%q}`, chatID, text))
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(string(out)))
 	}
