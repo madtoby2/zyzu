@@ -26,7 +26,11 @@ type Poster struct {
 func TelethonAction(action string, phone, code, password string) ([]byte, error) {
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
-		python = "python3"
+		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
+			python = "/opt/zyzu/.venv/bin/python"
+		} else {
+			python = "python3"
+		}
 	}
 	payload := fmt.Sprintf(`{"action":%q,"phone":%q,"code":%q,"password":%q}`, action, phone, code, password)
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
@@ -56,7 +60,11 @@ func (p *Poster) PostHTML(text string) (int, error) {
 func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
-		python = "python3"
+		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
+			python = "/opt/zyzu/.venv/bin/python"
+		} else {
+			python = "python3"
+		}
 	}
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"chat_id":%d,"text":%q}`, chatID, text))
