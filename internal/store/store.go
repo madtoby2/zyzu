@@ -34,6 +34,13 @@ type PostLog struct {
 	Content   string    `json:"content"`
 }
 
+type EventLog struct {
+	ID        int64     `json:"id"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -82,8 +89,49 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_stations_slug ON stations(slug);
 	CREATE INDEX IF NOT EXISTS idx_stations_blacklisted ON stations(blacklisted);
 	CREATE INDEX IF NOT EXISTS idx_post_log_station_id ON post_log(station_id);
+	CREATE TABLE IF NOT EXISTS event_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		level TEXT NOT NULL DEFAULT 'info',
+		message TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(created_at);
 	`
 	_, err := s.db.Exec(ddl)
+	return err
+}
+
+func (s *Store) LogEvent(level, message string) error {
+	_, err := s.db.Exec("INSERT INTO event_log (level, message) VALUES (?, ?)", level, message)
+	return err
+}
+
+func (s *Store) GetEventHistory(limit int) ([]EventLog, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := s.db.Query("SELECT id, level, message, created_at FROM event_log ORDER BY created_at DESC, id DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []EventLog
+	for rows.Next() {
+		var log EventLog
+		if err := rows.Scan(&log.ID, &log.Level, &log.Message, &log.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, log)
+	}
+	// The UI renders oldest-to-newest so the list reads naturally.
+	for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
+		logs[i], logs[j] = logs[j], logs[i]
+	}
+	return logs, rows.Err()
+}
+
+func (s *Store) ClearEventHistory() error {
+	_, err := s.db.Exec("DELETE FROM event_log")
 	return err
 }
 

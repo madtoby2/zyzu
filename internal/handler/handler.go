@@ -31,6 +31,7 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/api/stations", h.getStations)
 	r.Get("/api/stations/stats", h.getStats)
 	r.Get("/api/history", h.getHistory)
+	r.Get("/api/event-log", h.getEventLog)
 	r.Get("/api/status", h.getStatus)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
@@ -45,6 +46,8 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/content/trigger", h.triggerContent)
 		r.Get("/api/config", h.getConfig)
 		r.Put("/api/config", h.updateConfig)
+		r.Post("/api/event-log", h.postEventLog)
+		r.Delete("/api/event-log", h.clearEventLog)
 		r.Post("/api/channels", h.addChannel)
 		r.Delete("/api/channels", h.deleteChannel)
 		r.Post("/api/telethon/request-code", h.telethonRequestCode)
@@ -288,6 +291,43 @@ func (h *Handler) getHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, logs)
+}
+
+func (h *Handler) getEventLog(w http.ResponseWriter, r *http.Request) {
+	logs, err := h.store.GetEventHistory(200)
+	if err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	jsonOK(w, logs)
+}
+
+func (h *Handler) clearEventLog(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.ClearEventHistory(); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "cleared"})
+}
+
+func (h *Handler) postEventLog(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Level   string `json:"level"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Message) == "" {
+		jsonError(w, "message required", 400)
+		return
+	}
+	level := strings.TrimSpace(body.Level)
+	if level != "info" && level != "ok" && level != "warn" && level != "err" {
+		level = "info"
+	}
+	if err := h.store.LogEvent(level, strings.TrimSpace(body.Message)); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "logged"})
 }
 
 func (h *Handler) triggerScrape(w http.ResponseWriter, r *http.Request) {
