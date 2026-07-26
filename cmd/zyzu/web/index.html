@@ -171,10 +171,13 @@ async function loadConfig(){
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
-  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>`<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${esc(s.category||'鏈垎绫?)} 路 ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}鏉?/td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" title="鎺ㄩ€? onclick="api('/api/stations/${s.slug}/post','POST')">馃摛</button> <button class="btn btn-o" title="娴嬫椿" onclick="probeStation('${s.slug}')">馃摗</button> <button class="btn btn-o" title="淇敼鍒嗙被" onclick="editCategory('${s.slug}','${esc(s.category||'缁煎悎褰辫')}')">馃彿锔?/button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${s.slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'馃敁':'馃毇'}</button></td></tr>`).join('');
-}
-async function probeStation(slug){addLog('info','姝ｅ湪娴嬫椿 '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
-async function editCategory(slug,current){const value=prompt('杈撳叆鍒嗙被锛堢數褰?/ 鐢佃鍓?/ 鍔ㄦ极 / 鎴愪汉 / 缁煎悎褰辫锛?,current||'缁煎悎褰辫');if(value&&value.trim())await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category:value.trim()});}
+  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>{
+    const slug=encodeURIComponent(s.slug);
+    const category=esc(s.category||'未分类');
+    return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${category} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}','${esc(s.category||'综合影视')}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
+  }).join('');
+}async function probeStation(slug){addLog('info','Probing '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
+async function editCategory(slug,current){const value=prompt('Category',current||'General');if(value&&value.trim())await api('/api/stations/'+encodeURIComponent(slug)+'/category','POST',{category:value.trim()});}
 async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
@@ -226,3 +229,5 @@ init();
 </script>
 </body>
 </html>
+
+
