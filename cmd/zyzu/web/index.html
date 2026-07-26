@@ -185,7 +185,7 @@ async function api(path,method='GET',body=null){
   if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} 鈫?${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} 鈫?${e.message}`)}
 }
 async function saveChannels(){
-  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('鏍煎紡閿欒');await api('/api/config','PUT',{channel_map:map});addLog('ok','棰戦亾璁剧疆宸蹭繚瀛?)}catch(e){addLog('err','棰戦亾璁剧疆淇濆瓨澶辫触: '+e.message)}
+  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('invalid format');await api('/api/config','PUT',{channel_map:map});addLog('ok','Channel settings saved')}catch(e){addLog('err','Channel save failed: '+e.message)}
 }
 async function saveConfig(){
   await api('/api/config','PUT',{
@@ -219,7 +219,7 @@ function connectWS(){
       case'content_triggered':addLog('info','馃幀 鍐呭鎶撳彇鍚姩');break;
       case'manual_post':addLog('ok',`馃摛 ${msg.data.name} 鈫?MSG#${msg.data.message_id}`);break;
       case'blacklist_changed':addLog('info',`馃毇 ${msg.data.slug}: ${msg.data.blacklisted?'灞忚斀':'瑙ｉ櫎'}`);loadStats();loadStations();render();break;
-      case'config_updated':addLog('ok','鈿欙笍 閰嶇疆宸叉洿鏂?);loadConfig();break;
+      case'config_updated':addLog('ok','Config updated');loadConfig();break;
     }
   };
   ws.onclose=()=>setTimeout(connectWS,3000);
@@ -229,5 +229,6 @@ init();
 </script>
 </body>
 </html>
+
 
 
