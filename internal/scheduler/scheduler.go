@@ -228,6 +228,8 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
 
+		// The configured template is authoritative; discard legacy appended source text.
+		caption = formatVideoCaption(s.Cfg.VideoFormat, item)
 		_, err = s.Poster.PostVideo(filePath, caption, cat, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)

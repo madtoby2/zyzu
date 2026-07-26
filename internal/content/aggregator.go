@@ -97,21 +97,21 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					Title:     item.VodName,
 					TypeName:  item.TypeName,
 					Remarks:   item.VodRemarks,
-					Category:  Classify(item.TypeName, nil),
+					Category:  Classify(item.TypeName+" "+item.VodName+" "+item.VodRemarks, nil),
 					CoverURL:  item.VodPic,
 					Source:    src.Name,
 					SourceURL: src.APIURL,
 					VodID:     item.VodID,
 					VodTime:   item.VodTime,
-					Intro:     item.VodContent,
+					Intro:     cleanIntro(item.VodContent, item.VodName, item.VodID),
 				}
 
 				// Fetch detail for play URLs (best-effort)
 				detail, err := a.fetchDetail(src, item.VodID)
 				if err == nil && len(detail) > 0 {
 					ci.Episodes = parseEpisodes(detail[0].VodPlayURL)
-					if detail[0].VodContent != "" {
-						ci.Intro = detail[0].VodContent
+					if intro := cleanIntro(detail[0].VodContent, item.VodName, item.VodID); intro != "" {
+						ci.Intro = intro
 					}
 					if detail[0].VodRemarks != "" {
 						ci.Remarks = detail[0].VodRemarks
@@ -129,6 +129,14 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+func cleanIntro(intro, title string, id int) string {
+	intro = strings.TrimSpace(intro)
+	if intro == "" || intro == title || (id > 0 && intro == fmt.Sprintf("%d", id)) {
+		return ""
+	}
+	return intro
 }
 
 func (a *Aggregator) fetchList(src store.Station, page int) ([]APIItem, error) {
