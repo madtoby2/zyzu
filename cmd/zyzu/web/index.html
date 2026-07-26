@@ -31,6 +31,7 @@ body{background:linear-gradient(135deg,#24102f 0%,#5b174f 52%,#b52f72 100%);colo
  .toolbar input{flex:1;min-width:140px;padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
 .toolbar input:focus{outline:none;border-color:#ec4899}
 .toolbar select{padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
+.pagination{display:flex;justify-content:center;align-items:center;gap:10px;padding:14px 0;color:#a4a7b5;font-size:12px}.pagination button{min-width:72px}
 .btn{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
 .btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
 .btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
@@ -86,10 +87,10 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <div class="card"><div class="n" id="s-running">-</div><div class="l">调度状态</div></div>
   </div>
   <div class="toolbar">
-    <input id="search" placeholder="搜索资源站名称或 API..." oninput="render()">
+    <input id="search" placeholder="搜索资源站名称或 API..." oninput="stationPage=1;render()">
     <select id="station-category-filter" onchange="render()"><option value="">全部分类</option></select>
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
-      <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽</label>
+      <input type="checkbox" id="show-blocked" onchange="stationPage=1;render()">显示已屏蔽</label>
     <button class="btn btn-p" onclick="api('/api/trigger','POST')">采集</button>
     <button class="btn btn-g" onclick="api('/api/content/trigger','POST')">抓取内容</button>
   </div>
@@ -99,7 +100,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <button class="tab" onclick="switchTab('config')">配置</button>
     <button class="tab" onclick="switchTab('log')">日志</button>
   </div>
-  <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
+  <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table><div class="pagination"><button class="btn btn-o" onclick="changeStationPage(-1)">上一页</button><span id="station-page-info">第 1 页</span><button class="btn btn-o" onclick="changeStationPage(1)">下一页</button></div></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
       <label>添加频道（分类）<select id="channel-category"><option value="成人">成人</option><option value="综合影视">综合影视</option><option value="电影">电影</option><option value="电视剧">电视剧</option><option value="动漫">动漫</option><option value="综艺">综艺</option><option value="纪录片">纪录片</option></select></label>
@@ -139,7 +140,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 <div id="toast-area"></div>
 
 <script>
-let server='',key='',stations=[],ws,channelMap={},logEntries=[];
+let server='',key='',stations=[],ws,channelMap={},logEntries=[],stationPage=1;
+const stationPageSize=10;
 const LS='zyzu_profiles', LOG_PREFIX='zyzu_logs:';
 
 function init(){
@@ -223,12 +225,17 @@ function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const categoryFilter=document.getElementById('station-category-filter').value;
   const sb=document.getElementById('show-blocked').checked;
-  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!categoryFilter||((s.category||'未分类')===categoryFilter))&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>{
+  const filtered=stations.filter(s=>(sb||!s.blacklisted)&&(!categoryFilter||((s.category||'未分类')===categoryFilter))&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q)));
+  const totalPages=Math.max(1,Math.ceil(filtered.length/stationPageSize));stationPage=Math.min(Math.max(1,stationPage),totalPages);
+  const pageItems=filtered.slice((stationPage-1)*stationPageSize,stationPage*stationPageSize);
+  document.getElementById('station-page-info').textContent=`第 ${stationPage} / ${totalPages} 页 · 共 ${filtered.length} 个`;
+  document.getElementById('station-list').innerHTML=pageItems.map(s=>{
     const slug=encodeURIComponent(s.slug);
     const category=esc(s.category||'未分类');
     return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${category} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
   }).join('');
 }
+function changeStationPage(delta){stationPage+=delta;render()}
 async function probeStation(slug){addLog('info','Probing '+slug+'...');await api('/api/stations/'+encodeURIComponent(slug)+'/probe','POST');}
 function editCategory(slug){
   const station=stations.find(s=>s.slug===decodeURIComponent(slug)||s.slug===slug);if(!station)return;
