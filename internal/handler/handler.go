@@ -408,6 +408,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"channel_ids":   h.cfg.ChannelIDs,
 		"channel_map":   h.cfg.ChannelMap,
 		"post_format":   h.cfg.PostFormat,
+		"video_format":  h.cfg.VideoFormat,
 		"bot_token":     maskToken(h.cfg.BotToken),
 	}
 	jsonOK(w, safe)
@@ -436,6 +437,9 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["post_format"]; ok {
 		h.cfg.PostFormat = v.(string)
+	}
+	if v, ok := body["video_format"]; ok {
+		h.cfg.VideoFormat = v.(string)
 	}
 	if v, ok := body["bot_token"]; ok {
 		s := v.(string)

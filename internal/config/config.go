@@ -16,6 +16,7 @@ type Config struct {
 	ContentCron  string             `json:"content_cron"`
 	ListenAddr   string             `json:"listen_addr"`
 	PostFormat   string             `json:"post_format"`
+	VideoFormat  string             `json:"video_format"`
 	ContentMode  string             `json:"content_mode"`
 	ContentLimit int                `json:"content_limit"`
 }
@@ -28,6 +29,7 @@ func Default() *Config {
 		ContentMode:  "video",
 		ContentLimit: 10,
 		PostFormat:   "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`",
+		VideoFormat:  "🎬 {code}\n{title}\n分类：{category}\n来源：{source}",
 	}
 }
 

@@ -222,7 +222,7 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		if cat == "" {
 			cat = "default"
 		}
-		caption := fmt.Sprintf("<b>%s</b>", escapeHTML(item.Title))
+		caption := formatVideoCaption(s.Cfg.VideoFormat, item)
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
 		}
@@ -239,6 +239,17 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
 	return posted
+}
+
+func formatVideoCaption(format string, item content.ContentItem) string {
+	if strings.TrimSpace(format) == "" {
+		format = "[资源码] {code}\n{title}\n分类：{category}\n来源：{source}"
+	}
+	code := ""
+	if item.VodID > 0 {
+		code = fmt.Sprintf("%d", item.VodID)
+	}
+	return strings.NewReplacer("{code}", code, "{title}", escapeHTML(item.Title), "{category}", escapeHTML(item.Category), "{type}", escapeHTML(item.TypeName), "{source}", escapeHTML(item.Source)).Replace(format)
 }
 
 func (s *Scheduler) runPhotoPipeline(items []content.ContentItem) int {
