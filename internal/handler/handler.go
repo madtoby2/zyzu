@@ -215,6 +215,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"content_limit": h.cfg.ContentLimit,
 		"listen_addr":   h.cfg.ListenAddr,
 		"channel_ids":   h.cfg.ChannelIDs,
+		"channel_map":   h.cfg.ChannelMap,
 		"post_format":   h.cfg.PostFormat,
 		"bot_token":     maskToken(h.cfg.BotToken),
 	}
@@ -269,6 +270,25 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			h.cfg.ChannelIDs = ids
+		}
+	}
+	if v, ok := body["channel_map"]; ok {
+		if raw, ok := v.(map[string]interface{}); ok {
+			m := make(map[string][]int64, len(raw))
+			for category, values := range raw {
+				arr, ok := values.([]interface{})
+				if !ok {
+					continue
+				}
+				ids := make([]int64, 0, len(arr))
+				for _, item := range arr {
+					if n, ok := item.(float64); ok {
+						ids = append(ids, int64(n))
+					}
+				}
+				m[category] = ids
+			}
+			h.cfg.ChannelMap = m
 		}
 	}
 	h.cfg.Save("config.json")

@@ -165,7 +165,7 @@ async function loadStations(){
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
   if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
-  if(c.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:c.channel_ids},null,2)}}catch(e){}
+  if(c.channel_map)document.getElementById('cfg-channels').value=JSON.stringify(c.channel_map,null,2);else if(c.channel_ids)document.getElementById('cfg-channels').value=JSON.stringify({default:c.channel_ids},null,2)}}catch(e){}
 }
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
@@ -181,7 +181,7 @@ async function api(path,method='GET',body=null){
   if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} → ${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} → ${e.message}`)}
 }
 async function saveChannels(){
-  try{const map=JSON.parse(document.getElementById('cfg-channels').value);await api('/api/config','PUT',{channel_map:map})}catch(e){addLog('err','JSON格式错误')}
+  try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('格式错误');await api('/api/config','PUT',{channel_map:map});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道设置保存失败: '+e.message)}
 }
 async function saveConfig(){
   await api('/api/config','PUT',{
