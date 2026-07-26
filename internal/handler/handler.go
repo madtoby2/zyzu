@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -325,7 +326,7 @@ func (h *Handler) manualPost(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "post failed: "+err.Error(), 500)
 		return
 	}
-	h.store.LogPost(st.ID, "manual", msgID, st.Name)
+	h.store.LogPost(st.ID, "manual", msgID, h.sched.Poster.StationMessage(st, h.cfg.PostFormat, "manual"))
 	h.hub.Broadcast("manual_post", map[string]interface{}{
 		"name":       st.Name,
 		"message_id": msgID,
@@ -334,7 +335,13 @@ func (h *Handler) manualPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getHistory(w http.ResponseWriter, r *http.Request) {
-	logs, err := h.store.GetPostHistory(100)
+	limit := 10
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, parseErr := strconv.Atoi(raw); parseErr == nil && n > 0 && n < limit {
+			limit = n
+		}
+	}
+	logs, err := h.store.GetPostHistory(limit)
 	if err != nil {
 		jsonError(w, err.Error(), 500)
 		return

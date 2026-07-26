@@ -66,8 +66,8 @@ func (s *Scheduler) Start() error {
 	return nil
 }
 
-func (s *Scheduler) Stop()       { s.cron.Stop() }
-func (s *Scheduler) RunNow()      { go s.runScrape() }
+func (s *Scheduler) Stop()          { s.cron.Stop() }
+func (s *Scheduler) RunNow()        { go s.runScrape() }
 func (s *Scheduler) RunContentNow() { go s.runContent() }
 
 func (s *Scheduler) Status() map[string]interface{} {
@@ -126,7 +126,7 @@ func (s *Scheduler) runScrape() {
 		if err != nil {
 			continue
 		}
-		s.Store.LogPost(fullSt.ID, action, msgID, st.Name)
+		s.Store.LogPost(fullSt.ID, action, msgID, s.Poster.StationMessage(fullSt, s.Cfg.PostFormat, action))
 		s.mu.Lock()
 		if isNew {
 			s.NewCount++

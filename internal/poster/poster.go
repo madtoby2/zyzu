@@ -46,7 +46,12 @@ func New(pick func(string) int64) *Poster {
 }
 
 func (p *Poster) PostStation(st *store.Station, format string, action string) (int, error) {
-	return p.sendTelethon(p.formatStation(st, format, action), p.pickChannel("default"))
+	return p.sendTelethon(p.StationMessage(st, format, action), p.pickChannel("default"))
+}
+
+// StationMessage returns the exact text sent for a station announcement.
+func (p *Poster) StationMessage(st *store.Station, format string, action string) string {
+	return p.formatStation(st, format, action)
 }
 
 func (p *Poster) PostSimple(text string) (int, error) {
