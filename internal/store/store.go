@@ -46,10 +46,13 @@ type Store struct {
 }
 
 func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=30000")
 	if err != nil {
 		return nil, err
 	}
+	// SQLite serializes writers; one pooled connection prevents scheduler/API lock races.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		return nil, err
@@ -98,6 +101,11 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(created_at);
 	`
 	_, err := s.db.Exec(ddl)
+	if err != nil {
+		return err
+	}
+	// Keep known migrated endpoints usable after an interface list refresh.
+	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
 	return err
 }
 
