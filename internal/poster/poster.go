@@ -1,16 +1,12 @@
 package poster
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -91,23 +87,10 @@ func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 }
 
 func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
+	if _, err := os.Stat(filePath); err != nil {
 		return 0, fmt.Errorf("open video: %w", err)
 	}
-	defer file.Close()
-
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	w.WriteField("chat_id", fmt.Sprintf("%d", p.pickChannel(category)))
-	w.WriteField("caption", caption)
-	w.WriteField("parse_mode", "HTML")
-	w.WriteField("supports_streaming", "true")
-	part, _ := w.CreateFormFile("video", filepath.Base(filePath))
-	io.Copy(part, file)
-	w.Close()
-
-	return 0, errors.New("Telethon video upload bridge not implemented")
+	return p.sendTelethonVideo(filePath, caption, p.pickChannel(category))
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
@@ -129,6 +112,35 @@ func (p *Poster) PostVideo(filePath, caption, category string) (int, error) {
 		return 0, fmt.Errorf("sendVideo failed")
 	}
 	return result.Result.MessageID, nil */
+}
+
+func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64) (int, error) {
+	python := os.Getenv("PYTHON_BIN")
+	if python == "" {
+		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
+			python = "/opt/zyzu/.venv/bin/python"
+		} else {
+			python = "python3"
+		}
+	}
+	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q}`, chatID, filePath, caption)
+	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
+	cmd.Stdin = strings.NewReader(payload)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("telethon video: %s", strings.TrimSpace(string(out)))
+	}
+	var result struct {
+		MessageID int    `json:"message_id"`
+		Error     string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, err
+	}
+	if result.Error != "" {
+		return 0, errors.New(result.Error)
+	}
+	return result.MessageID, nil
 }
 
 func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {

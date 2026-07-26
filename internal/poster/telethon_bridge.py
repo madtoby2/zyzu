@@ -23,6 +23,9 @@ async def main():
         print(json.dumps({'authorized': await client.is_user_authorized()})); await client.disconnect(); return
     if not await client.is_user_authorized():
         raise RuntimeError('telethon session is not authorized')
+    if req.get('action') == 'upload_video':
+        msg = await client.send_file(int(req['chat_id']), req['file_path'], caption=req.get('caption', ''), parse_mode='html', supports_streaming=True)
+        print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     msg = await client.send_message(int(req['chat_id']), req['text'])
     print(json.dumps({'message_id': msg.id}))
     await client.disconnect()

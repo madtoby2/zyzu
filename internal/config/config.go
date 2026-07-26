@@ -8,9 +8,9 @@ import (
 
 type Config struct {
 	BotToken     string             `json:"bot_token"`
-	ChannelIDs   []int64            `json:"channel_ids"`   // deprecated
-	ChannelID    int64              `json:"channel_id"`    // deprecated
-	ChannelMap   map[string][]int64 `json:"channel_map"`   // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
+	ChannelIDs   []int64            `json:"channel_ids"` // deprecated
+	ChannelID    int64              `json:"channel_id"`  // deprecated
+	ChannelMap   map[string][]int64 `json:"channel_map"` // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
 	APIKey       string             `json:"api_key"`
 	ScrapeCron   string             `json:"scrape_cron"`
 	ContentCron  string             `json:"content_cron"`
@@ -71,6 +71,21 @@ func (c *Config) ChannelsFor(category string) []int64 {
 		}
 		if ids, ok := c.ChannelMap["default"]; ok && len(ids) > 0 {
 			return ids
+		}
+		var only []int64
+		for _, ids := range c.ChannelMap {
+			if len(ids) != 1 {
+				only = nil
+				break
+			}
+			if len(only) > 0 {
+				only = nil
+				break
+			}
+			only = ids
+		}
+		if len(only) == 1 {
+			return only
 		}
 	}
 	if len(c.ChannelIDs) > 0 {
