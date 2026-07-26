@@ -225,6 +225,11 @@ func (s *Store) UpdateHealth(slug, availability, responseTime string) error {
 	return err
 }
 
+func (s *Store) UpdateAPIURL(slug, apiURL string) error {
+	_, err := s.db.Exec("UPDATE stations SET api_url=? WHERE slug=?", apiURL, slug)
+	return err
+}
+
 func (s *Store) HasBeenPosted(slug string, within time.Duration) (bool, error) {
 	var count int
 	err := s.db.QueryRow(

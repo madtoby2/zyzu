@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -185,8 +186,26 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		jsonError(w, "probe failed: "+err.Error(), 502)
-		return
+		fallback := apexAPIFallback(st.APIURL)
+		if fallback == "" || fallback == st.APIURL {
+			jsonError(w, "probe failed: "+err.Error(), 502)
+			return
+		}
+		req2, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, fallback, nil)
+		if reqErr != nil {
+			jsonError(w, "probe failed: "+err.Error(), 502)
+			return
+		}
+		resp, err = client.Do(req2)
+		if err != nil {
+			jsonError(w, "probe failed: "+err.Error(), 502)
+			return
+		}
+		if updateErr := h.store.UpdateAPIURL(slug, fallback); updateErr != nil {
+			resp.Body.Close()
+			jsonError(w, "probe succeeded but endpoint save failed: "+updateErr.Error(), 500)
+			return
+		}
 	}
 	resp.Body.Close()
 	availability := "0%"
@@ -198,6 +217,15 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, map[string]string{"availability": availability, "response_time": fmt.Sprintf("%dms", time.Since(start).Milliseconds())})
+}
+
+func apexAPIFallback(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || !strings.HasPrefix(u.Hostname(), "api.") {
+		return ""
+	}
+	u.Host = strings.TrimPrefix(u.Host, "api.")
+	return u.String()
 }
 
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
