@@ -239,7 +239,7 @@ function connectWS(){
       case'content_triggered':addLog('info','内容抓取已启动');break;
       case'manual_post':addLog('ok',`已推送 ${msg.data.name}，消息 #${msg.data.message_id}`);break;
       case'blacklist_changed':addLog('info',`${msg.data.slug}： ${msg.data.blacklisted?'已屏蔽':'已解除屏蔽'}`);loadStats();loadStations();render();break;
-      case'config_updated':addLog('ok','Config updated');loadConfig();break;
+      case'config_updated':addLog('ok','配置已更新');loadConfig();break;
     }
   };
   ws.onclose=()=>setTimeout(connectWS,3000);
@@ -249,6 +249,8 @@ init();
 </script>
 </body>
 </html>
+
+
 
 
 
