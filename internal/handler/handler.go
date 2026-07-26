@@ -44,8 +44,68 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/content/trigger", h.triggerContent)
 		r.Get("/api/config", h.getConfig)
 		r.Put("/api/config", h.updateConfig)
+		r.Post("/api/channels", h.addChannel)
+		r.Delete("/api/channels", h.deleteChannel)
 		r.Get("/ws", h.hub.HandleWS)
 	})
+}
+
+func (h *Handler) addChannel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Category string `json:"category"`
+		ID       int64  `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Category) == "" || body.ID == 0 {
+		jsonError(w, "category and id required", 400)
+		return
+	}
+	if h.cfg.ChannelMap == nil {
+		h.cfg.ChannelMap = map[string][]int64{}
+	}
+	cat := strings.TrimSpace(body.Category)
+	for _, id := range h.cfg.ChannelMap[cat] {
+		if id == body.ID {
+			jsonOK(w, h.cfg.ChannelMap)
+			return
+		}
+	}
+	h.cfg.ChannelMap[cat] = append(h.cfg.ChannelMap[cat], body.ID)
+	if err := h.cfg.Save("config.json"); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	h.hub.Broadcast("channel_changed", map[string]interface{}{"action": "add", "category": cat, "id": body.ID})
+	jsonOK(w, h.cfg.ChannelMap)
+}
+
+func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Category string `json:"category"`
+		ID       int64  `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Category) == "" || body.ID == 0 {
+		jsonError(w, "category and id required", 400)
+		return
+	}
+	cat := strings.TrimSpace(body.Category)
+	ids := h.cfg.ChannelMap[cat]
+	out := ids[:0]
+	for _, id := range ids {
+		if id != body.ID {
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		delete(h.cfg.ChannelMap, cat)
+	} else {
+		h.cfg.ChannelMap[cat] = out
+	}
+	if err := h.cfg.Save("config.json"); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	h.hub.Broadcast("channel_changed", map[string]interface{}{"action": "delete", "category": cat, "id": body.ID})
+	jsonOK(w, h.cfg.ChannelMap)
 }
 
 func (h *Handler) updateCategory(w http.ResponseWriter, r *http.Request) {

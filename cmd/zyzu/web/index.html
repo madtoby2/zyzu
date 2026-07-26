@@ -94,6 +94,10 @@ tr:hover td{background:#16162a}
   <div id="tab-stations"><table><thead><tr><th>鍚嶇О</th><th>璧勬簮閲?/th><th>鍙敤鐜?/th><th>鍝嶅簲</th><th>鎿嶄綔</th></tr></thead><tbody id="station-list"></tbody></table></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
+      <label>添加频道（分类）<input id="channel-category" placeholder="adult"></label>
+      <label>频道 ID<input id="channel-id" type="number" placeholder="-1001234567890"></label>
+      <button class="btn btn-g" onclick="addChannel()">添加频道</button>
+      <button class="btn btn-r" onclick="removeChannel()">删除频道</button>
       <label>棰戦亾鏄犲皠 JSON<br><textarea id="cfg-channels" rows="6">{"default":[],"adult":[],"movie":[],"anime":[]}</textarea></label>
       <button class="btn btn-p" onclick="saveChannels()">淇濆瓨</button>
     </div>
@@ -187,6 +191,8 @@ async function api(path,method='GET',body=null){
 async function saveChannels(){
   try{const map=JSON.parse(document.getElementById('cfg-channels').value);if(!map||typeof map!=='object')throw new Error('invalid format');await api('/api/config','PUT',{channel_map:map});addLog('ok','Channel settings saved')}catch(e){addLog('err','Channel save failed: '+e.message)}
 }
+async function addChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','POST',{category,id});await loadConfig();}
+async function removeChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','DELETE',{category,id});await loadConfig();}
 async function saveConfig(){
   await api('/api/config','PUT',{
     bot_token:document.getElementById('cfg-token').value,
