@@ -308,7 +308,8 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["bot_token"]; ok {
 		s := v.(string)
-		if s != "" && !strings.Contains(s, "****") {
+		// The UI receives a masked token; never persist that placeholder.
+		if s != "" && !strings.Contains(s, "****") && s != "***" {
 			h.cfg.BotToken = s
 		}
 	}
