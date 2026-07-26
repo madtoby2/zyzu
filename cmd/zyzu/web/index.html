@@ -103,9 +103,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>添加频道（分类）<select id="channel-category"><option value="成人">成人</option><option value="综合影视">综合影视</option><option value="电影">电影</option><option value="电视剧">电视剧</option><option value="动漫">动漫</option><option value="综艺">综艺</option><option value="纪录片">纪录片</option></select></label>
       <label>频道 ID<input id="channel-id" type="number" placeholder="-1001234567890"></label>
       <button class="btn btn-g" onclick="addChannel()">添加频道</button>
-      <button class="btn btn-r" onclick="removeChannel()">删除频道</button>
       <div class="channel-cards" id="channel-cards"><div class="channel-card">正在加载频道...</div></div>
-      <button class="btn btn-p" onclick="saveChannels()">保存频道设置</button>
+      <small style="display:block;color:#888;margin-top:10px">点击频道卡片进入设置，可查看绑定资源站或删除该频道。</small>
     </div>
   </div>
   <div id="tab-config" class="hidden">
@@ -127,7 +126,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
   <div id="tab-log" class="hidden"><div class="log-tools"><select id="log-filter" onchange="renderLogs()"><option value="all">全部日志</option><option value="info">信息</option><option value="ok">成功</option><option value="warn">警告</option><option value="err">错误</option></select><button class="btn btn-o" onclick="clearLogs()">清空日志</button></div><div class="log-box" id="log-el"></div></div>
 </div>
 <div class="modal hidden" id="channel-detail-modal" onclick="if(event.target===this)closeChannelDetail()">
-  <div class="modal-panel"><div class="modal-head"><h3 id="channel-detail-title">频道详情</h3><button class="modal-close" onclick="closeChannelDetail()">×</button></div><div id="channel-detail-body"></div></div>
+  <div class="modal-panel"><div class="modal-head"><h3 id="channel-detail-title">频道设置</h3><button class="modal-close" onclick="closeChannelDetail()">×</button></div><div id="channel-detail-body"></div><div class="modal-actions"><button class="btn btn-r" onclick="deleteChannelFromDetail()">删除此频道</button><button class="btn btn-o" onclick="closeChannelDetail()">关闭</button></div></div>
 </div>
 <div class="modal hidden" id="category-modal" onclick="if(event.target===this)closeCategoryModal()">
   <div class="modal-panel"><div class="modal-head"><h3>修改资源站分类</h3><button class="modal-close" onclick="closeCategoryModal()">×</button></div>
@@ -200,13 +199,23 @@ function renderChannelCards(){const el=document.getElementById('channel-cards');
 async function openChannelDetail(category,id){
   category=decodeURIComponent(category);id=decodeURIComponent(id);
   const modal=document.getElementById('channel-detail-modal'), body=document.getElementById('channel-detail-body');
+  modal.dataset.category=category;modal.dataset.id=id;
   document.getElementById('channel-detail-title').textContent=category+' · 频道详情';
   const bound=stations.filter(s=>(s.category||'综合影视')===category);
-  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>当前推送状态</small><b>由调度器实时处理</b></div></div><div class="detail-section"><h4>绑定资源站</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
+  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>频道分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>推送方式</small><b>Telethon</b></div></div><div class="detail-section"><h4>绑定资源站（按此分类自动推送）</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
   modal.classList.remove('hidden');
   try{const r=await fetch(server+'/api/history?limit=8').then(r=>r.json());const logs=r.ok&&Array.isArray(r.data)?r.data:[];const names=new Map(stations.map(s=>[s.id,s.name]));const el=document.getElementById('channel-history');el.innerHTML=logs.length?logs.map(x=>`<div class="detail-row">${esc(names.get(x.station_id)||'资源站')} · ${esc(x.action||'推送')} · ${esc(new Date(x.posted_at).toLocaleString())}</div>`).join(''):'<div class="empty-detail">暂无推送记录</div>'}catch(e){const el=document.getElementById('channel-history');if(el)el.innerHTML='<div class="empty-detail">推送记录暂时不可用</div>'}
 }
 function closeChannelDetail(){document.getElementById('channel-detail-modal').classList.add('hidden')}
+async function deleteChannelFromDetail(){
+  const modal=document.getElementById('channel-detail-modal'),category=modal.dataset.category,id=Number(modal.dataset.id);
+  if(!category||!id)return;
+  if(!window.confirm(`确定删除“${category}”频道吗？`))return;
+  await api('/api/channels','DELETE',{category,id});
+  await loadConfig();
+  renderChannelCards();
+  closeChannelDetail();
+}
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
