@@ -114,7 +114,7 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 
 				ci := ContentItem{
 					Key:       key,
-					Title:     item.VodName,
+					Title:     normalizeTitle(item.VodName),
 					TypeName:  item.TypeName,
 					Remarks:   item.VodRemarks,
 					Category:  Classify(item.TypeName+" "+item.VodName+" "+item.VodRemarks, nil),
@@ -149,6 +149,20 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+// normalizeTitle removes the common API corruption where the exact same title
+// is concatenated twice (for example "A A"). Keep other repeated words intact.
+func normalizeTitle(title string) string {
+	title = strings.TrimSpace(title)
+	runes := []rune(title)
+	if len(runes) > 1 && len(runes)%2 == 0 {
+		half := len(runes) / 2
+		if strings.TrimSpace(string(runes[:half])) == strings.TrimSpace(string(runes[half:])) {
+			return strings.TrimSpace(string(runes[:half]))
+		}
+	}
+	return title
 }
 
 func itemKey(sourceURL string, item APIItem) string {
