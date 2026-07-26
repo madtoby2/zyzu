@@ -185,15 +185,25 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
-	if err != nil {
+	migrated := false
+	// Retired API subdomains commonly fail with DNS, TLS, timeout, or an HTTP
+	// error while the same path remains available on the apex domain.
+	if err != nil || resp.StatusCode >= 400 {
+		if resp != nil {
+			resp.Body.Close()
+		}
 		fallback := apexAPIFallback(st.APIURL)
 		if fallback == "" || fallback == st.APIURL {
-			jsonError(w, "probe failed: "+err.Error(), 502)
+			if err != nil {
+				jsonError(w, "probe failed: "+err.Error(), 502)
+			} else {
+				jsonError(w, fmt.Sprintf("probe failed: HTTP %d", resp.StatusCode), 502)
+			}
 			return
 		}
 		req2, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, fallback, nil)
 		if reqErr != nil {
-			jsonError(w, "probe failed: "+err.Error(), 502)
+			jsonError(w, "probe failed: "+reqErr.Error(), 502)
 			return
 		}
 		resp, err = client.Do(req2)
@@ -201,11 +211,18 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "probe failed: "+err.Error(), 502)
 			return
 		}
+		if resp.StatusCode >= 400 {
+			status := resp.StatusCode
+			resp.Body.Close()
+			jsonError(w, fmt.Sprintf("probe failed: HTTP %d", status), 502)
+			return
+		}
 		if updateErr := h.store.UpdateAPIURL(slug, fallback); updateErr != nil {
 			resp.Body.Close()
 			jsonError(w, "probe succeeded but endpoint save failed: "+updateErr.Error(), 500)
 			return
 		}
+		migrated = true
 	}
 	resp.Body.Close()
 	availability := "0%"
@@ -216,7 +233,11 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), 500)
 		return
 	}
-	jsonOK(w, map[string]string{"availability": availability, "response_time": fmt.Sprintf("%dms", time.Since(start).Milliseconds())})
+	result := map[string]string{"availability": availability, "response_time": fmt.Sprintf("%dms", time.Since(start).Milliseconds())}
+	if migrated {
+		result["migrated"] = "true"
+	}
+	jsonOK(w, result)
 }
 
 func apexAPIFallback(raw string) string {
