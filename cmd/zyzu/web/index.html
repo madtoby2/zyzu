@@ -124,6 +124,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>内容计划<input id="cfg-content-cron"></label>
       <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
       <label>抓取条数<input id="cfg-limit" type="number" value="10"></label>
+      <label>资源站推送文案<textarea id="cfg-post-format" rows="5" placeholder="支持 {name}、{category}、{availability}、{resource_count}、{response_time}、{tags}、{api_url}"></textarea></label>
+      <small style="display:block;color:#888;margin-top:-6px">可用变量：{name} 名称、{category} 分类、{resource_count} 资源量、{availability} 可用率、{response_time} 响应、{tags} 标签、{api_url} 接口地址。</small>
       <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
   </div>
@@ -196,7 +198,7 @@ async function loadStations(){
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
-  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
+  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-post-format').value=c.post_format||'{name}';
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};refreshChannelCategories();renderChannelCards()}}catch(e){}
  }
 function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
@@ -274,6 +276,7 @@ async function saveConfig(){
     content_cron:document.getElementById('cfg-content-cron').value,
     content_mode:document.getElementById('cfg-mode').value,
     content_limit:parseInt(document.getElementById('cfg-limit').value)||10
+    ,post_format:document.getElementById('cfg-post-format').value
   });
 }
 async function telethonRequestCode(){const phone=document.getElementById('telethon-phone').value.trim();if(!phone){addLog('err','请输入手机号');return}await api('/api/telethon/request-code','POST',{phone});}
