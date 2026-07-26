@@ -112,21 +112,9 @@ func (s *Scheduler) runScrape() {
 		if err != nil || fullSt.Blacklisted {
 			continue
 		}
-		action := ""
-		if isNew {
-			action = "new"
-		} else {
-			posted, _ := s.Store.HasBeenPosted(st.Slug, 24*time.Hour)
-			if posted {
-				continue
-			}
-			action = "update"
-		}
-		msgID, err := s.Poster.PostStation(fullSt, s.Cfg.PostFormat, action)
-		if err != nil {
-			continue
-		}
-		s.Store.LogPost(fullSt.ID, action, msgID, s.Poster.StationMessage(fullSt, s.Cfg.PostFormat, action))
+		// Scraping updates the station catalog only. Station announcements are
+		// intentionally not sent to content channels; use the manual station
+		// push action when an announcement is explicitly needed.
 		s.mu.Lock()
 		if isNew {
 			s.NewCount++
@@ -134,7 +122,6 @@ func (s *Scheduler) runScrape() {
 			s.UpdCount++
 		}
 		s.mu.Unlock()
-		time.Sleep(2 * time.Second)
 	}
 }
 
