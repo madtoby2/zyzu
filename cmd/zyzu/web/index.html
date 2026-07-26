@@ -30,6 +30,7 @@ body{background:linear-gradient(135deg,#24102f 0%,#5b174f 52%,#b52f72 100%);colo
 .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
  .toolbar input{flex:1;min-width:140px;padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
 .toolbar input:focus{outline:none;border-color:#ec4899}
+.toolbar select{padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
 .btn{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
 .btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
 .btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
@@ -86,6 +87,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
   </div>
   <div class="toolbar">
     <input id="search" placeholder="搜索资源站名称或 API..." oninput="render()">
+    <select id="station-category-filter" onchange="render()"><option value="">全部分类</option></select>
     <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:#666">
       <input type="checkbox" id="show-blocked" onchange="render()">显示已屏蔽</label>
     <button class="btn btn-p" onclick="api('/api/trigger','POST')">采集</button>
@@ -187,7 +189,7 @@ async function loadStats(){
   const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok)document.getElementById('s-running').textContent=s.data.running?'RUNNING':'IDLE'}catch(e){}
 }
 async function loadStations(){
-  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories()}catch(e){}
+  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories();refreshStationCategoryFilter()}catch(e){}
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
@@ -195,6 +197,7 @@ async function loadConfig(){
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};refreshChannelCategories();renderChannelCards()}}catch(e){}
  }
 function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
+function refreshStationCategoryFilter(){const el=document.getElementById('station-category-filter');if(!el)return;const current=el.value;const values=stations.map(s=>s.category||'未分类').filter(Boolean);const unique=[...new Set(values)];el.innerHTML='<option value="">全部分类</option>'+unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
 function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><small style="display:block;color:#888;margin-top:8px">点击查看详情</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
 async function openChannelDetail(category,id){
   category=decodeURIComponent(category);id=decodeURIComponent(id);
@@ -218,8 +221,9 @@ async function deleteChannelFromDetail(){
 }
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
+  const categoryFilter=document.getElementById('station-category-filter').value;
   const sb=document.getElementById('show-blocked').checked;
-  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>{
+  document.getElementById('station-list').innerHTML=stations.filter(s=>(sb||!s.blacklisted)&&(!categoryFilter||((s.category||'未分类')===categoryFilter))&&(!q||s.name.toLowerCase().includes(q)||(s.api_url||'').toLowerCase().includes(q))).map(s=>{
     const slug=encodeURIComponent(s.slug);
     const category=esc(s.category||'未分类');
     return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${category} · ${esc(s.api_url||'').substring(0,45)}</small></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
