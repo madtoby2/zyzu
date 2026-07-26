@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -225,10 +226,17 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 		}
 		migrated = true
 	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	resp.Body.Close()
 	availability := "0%"
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		availability = "100%"
+	}
+	var api struct {
+		Total int `json:"total"`
+	}
+	if json.Unmarshal(body, &api) == nil && api.Total > 0 {
+		_ = h.store.UpdateResourceCount(slug, strconv.Itoa(api.Total))
 	}
 	if err := h.store.UpdateHealth(slug, availability, fmt.Sprintf("%dms", time.Since(start).Milliseconds())); err != nil {
 		jsonError(w, err.Error(), 500)

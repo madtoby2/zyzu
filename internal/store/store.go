@@ -232,6 +232,11 @@ func (s *Store) UpdateHealth(slug, availability, responseTime string) error {
 	return err
 }
 
+func (s *Store) UpdateResourceCount(slug, count string) error {
+	_, err := s.db.Exec("UPDATE stations SET resource_count=? WHERE slug=?", count, slug)
+	return err
+}
+
 func (s *Store) UpdateAPIURL(slug, apiURL string) error {
 	_, err := s.db.Exec("UPDATE stations SET api_url=? WHERE slug=?", apiURL, slug)
 	return err
