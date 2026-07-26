@@ -104,6 +104,12 @@ tr:hover td{background:#16162a}
   </div>
   <div id="tab-config" class="hidden">
     <div class="config-form">
+      <label>Telethon 手机号<input id="telethon-phone" placeholder="+8613812345678"></label>
+      <label>登录验证码<input id="telethon-code" placeholder="收到的验证码"></label>
+      <label>两步验证密码<input id="telethon-password" type="password"></label>
+      <button class="btn btn-o" onclick="telethonRequestCode()">请求验证码</button>
+      <button class="btn btn-g" onclick="telethonLogin()">登录 Telethon</button>
+      <span id="telethon-status" class="info">未检查</span>
       <label>Bot Token<input id="cfg-token"></label>
       <label>閲囬泦 Cron<input id="cfg-scrape"></label>
       <label>鍐呭 Cron<input id="cfg-content-cron"></label>
@@ -202,6 +208,9 @@ async function saveConfig(){
     content_limit:parseInt(document.getElementById('cfg-limit').value)||10
   });
 }
+async function telethonRequestCode(){const phone=document.getElementById('telethon-phone').value.trim();if(!phone){addLog('err','请输入手机号');return}await api('/api/telethon/request-code','POST',{phone});}
+async function telethonLogin(){const phone=document.getElementById('telethon-phone').value.trim(),code=document.getElementById('telethon-code').value.trim(),password=document.getElementById('telethon-password').value;if(!phone||!code){addLog('err','请输入手机号和验证码');return}await api('/api/telethon/login','POST',{Phone:phone,Code:code,Password:password});telethonStatus();}
+async function telethonStatus(){try{const r=await fetch(server+'/api/telethon/status',{headers:{'X-API-Key':key}}).then(r=>r.json());document.getElementById('telethon-status').textContent=r.ok?'已授权':'未授权'}catch(e){document.getElementById('telethon-status').textContent='检查失败'}}
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('[id^="tab-"]').forEach(t=>t.classList.add('hidden'));

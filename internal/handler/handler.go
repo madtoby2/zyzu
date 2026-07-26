@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/madtoby2/zyzu/internal/config"
+	"github.com/madtoby2/zyzu/internal/poster"
 	"github.com/madtoby2/zyzu/internal/scheduler"
 	"github.com/madtoby2/zyzu/internal/server"
 	"github.com/madtoby2/zyzu/internal/store"
@@ -46,8 +47,42 @@ func (h *Handler) Register(r chi.Router) {
 		r.Put("/api/config", h.updateConfig)
 		r.Post("/api/channels", h.addChannel)
 		r.Delete("/api/channels", h.deleteChannel)
+		r.Post("/api/telethon/request-code", h.telethonRequestCode)
+		r.Post("/api/telethon/login", h.telethonLogin)
+		r.Get("/api/telethon/status", h.telethonStatus)
 		r.Get("/ws", h.hub.HandleWS)
 	})
+}
+
+func (h *Handler) telethonRequestCode(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Phone string `json:"phone"`
+	}
+	json.NewDecoder(r.Body).Decode(&b)
+	out, err := poster.TelethonAction("request_code", b.Phone, "", "")
+	if err != nil {
+		jsonError(w, string(out), 500)
+		return
+	}
+	jsonOK(w, string(out))
+}
+func (h *Handler) telethonLogin(w http.ResponseWriter, r *http.Request) {
+	var b struct{ Phone, Code, Password string }
+	json.NewDecoder(r.Body).Decode(&b)
+	out, err := poster.TelethonAction("login", b.Phone, b.Code, b.Password)
+	if err != nil {
+		jsonError(w, string(out), 500)
+		return
+	}
+	jsonOK(w, string(out))
+}
+func (h *Handler) telethonStatus(w http.ResponseWriter, r *http.Request) {
+	out, err := poster.TelethonAction("status", "", "", "")
+	if err != nil {
+		jsonError(w, string(out), 500)
+		return
+	}
+	jsonOK(w, string(out))
 }
 
 func (h *Handler) addChannel(w http.ResponseWriter, r *http.Request) {

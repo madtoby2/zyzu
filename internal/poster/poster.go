@@ -23,6 +23,17 @@ type Poster struct {
 	client      *http.Client
 }
 
+func TelethonAction(action string, phone, code, password string) ([]byte, error) {
+	python := os.Getenv("PYTHON_BIN")
+	if python == "" {
+		python = "python3"
+	}
+	payload := fmt.Sprintf(`{"action":%q,"phone":%q,"code":%q,"password":%q}`, action, phone, code, password)
+	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
+	cmd.Stdin = strings.NewReader(payload)
+	return cmd.CombinedOutput()
+}
+
 func New(pick func(string) int64) *Poster {
 	return &Poster{
 		pickChannel: pick,
