@@ -49,10 +49,12 @@ table{width:100%;border-collapse:collapse;font-size:12px}
  .config-form input,.config-form textarea,.config-form select{width:100%;margin-top:3px;padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px;font-family:monospace}
 .config-form textarea{resize:vertical;min-height:100px}
 .channel-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin:12px 0}
-.channel-card{background:#1b1b2b;border:1px solid #34344a;border-radius:9px;padding:12px;color:#ddd}
+.channel-card{background:#1b1b2b;border:1px solid #34344a;border-radius:9px;padding:12px;color:#ddd;cursor:pointer;transition:.15s}.channel-card:hover{border-color:#ec4899;transform:translateY(-2px);box-shadow:0 5px 16px #ec489933}
 .channel-card h4{color:#ec4899;font-size:13px;margin-bottom:8px}.channel-card .channel-id{font-family:monospace;font-size:12px;color:#aaa;word-break:break-all}
-.log-box{background:#0a0a10;border:1px solid #1a1a2a;border-radius:10px;padding:12px;max-height:320px;overflow-y:auto;font-size:12px;font-family:monospace}
+.modal{position:fixed;inset:0;background:#090912aa;display:flex;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.hidden{display:none}.modal-panel{width:min(680px,100%);max-height:85vh;overflow:auto;background:#151522;border:1px solid #3b3153;border-radius:14px;padding:20px;box-shadow:0 18px 60px #090912cc}.modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.modal-head h3{color:#ec4899;font-size:17px}.modal-close{background:none;border:0;color:#aaa;font-size:22px;cursor:pointer}.detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.detail-item{background:#1b1b2b;border-radius:8px;padding:10px}.detail-item small{display:block;color:#888;font-size:11px;margin-bottom:4px}.detail-item b{font-size:13px;color:#eee;word-break:break-all}.detail-section{margin-top:14px}.detail-section h4{font-size:12px;color:#ec4899;margin-bottom:8px}.detail-list{display:grid;gap:6px}.detail-row{background:#1b1b2b;border-radius:7px;padding:8px 10px;font-size:12px;color:#c7c9d3}.empty-detail{color:#888;font-size:12px;padding:8px 0}
+.log-tools{display:flex;gap:8px;align-items:center;margin-bottom:8px}.log-tools select{background:#0f0f1b;border:1px solid #39394d;color:#ddd;border-radius:6px;padding:5px 8px;font-size:11px}.log-box{background:#0a0a10;border:1px solid #1a1a2a;border-radius:10px;padding:12px;max-height:320px;overflow-y:auto;font-size:12px;font-family:monospace}
 .log-box .ts{color:#444}.log-box .ok{color:#10b981}.log-box .err{color:#ef4444}.log-box .info{color:#888}
+.log-box .warn{color:#f59e0b}.toast{position:fixed;right:24px;top:24px;z-index:20;min-width:260px;max-width:420px;padding:12px 16px;border-radius:9px;color:#fff;box-shadow:0 8px 28px #090912aa;font-size:13px}.toast.err{background:#b42318}.toast.warn{background:#b54708}.toast.ok{background:#087443}.toast.info{background:#3730a3}
 .hidden{display:none}
 @media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
@@ -121,8 +123,12 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
   </div>
-  <div id="tab-log" class="hidden"><div class="log-box" id="log-el"></div></div>
+  <div id="tab-log" class="hidden"><div class="log-tools"><select id="log-filter" onchange="renderLogs()"><option value="all">全部日志</option><option value="info">信息</option><option value="ok">成功</option><option value="warn">警告</option><option value="err">错误</option></select><button class="btn btn-o" onclick="clearLogs()">清空日志</button></div><div class="log-box" id="log-el"></div></div>
 </div>
+<div class="modal hidden" id="channel-detail-modal" onclick="if(event.target===this)closeChannelDetail()">
+  <div class="modal-panel"><div class="modal-head"><h3 id="channel-detail-title">频道详情</h3><button class="modal-close" onclick="closeChannelDetail()">×</button></div><div id="channel-detail-body"></div></div>
+</div>
+<div id="toast-area"></div>
 
 <script>
 let server='',key='',stations=[],ws,channelMap={};
@@ -181,7 +187,17 @@ async function loadConfig(){
   if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};renderChannelCards()}}catch(e){}
 }
-function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card">暂无频道，请添加</div>'}
+function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><small style="display:block;color:#888;margin-top:8px">点击查看详情</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
+async function openChannelDetail(category,id){
+  category=decodeURIComponent(category);id=decodeURIComponent(id);
+  const modal=document.getElementById('channel-detail-modal'), body=document.getElementById('channel-detail-body');
+  document.getElementById('channel-detail-title').textContent=category+' · 频道详情';
+  const bound=stations.filter(s=>(s.category||'综合影视')===category);
+  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>当前推送状态</small><b>由调度器实时处理</b></div></div><div class="detail-section"><h4>绑定资源站</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
+  modal.classList.remove('hidden');
+  try{const r=await fetch(server+'/api/history?limit=8').then(r=>r.json());const logs=r.ok&&Array.isArray(r.data)?r.data:[];const names=new Map(stations.map(s=>[s.id,s.name]));const el=document.getElementById('channel-history');el.innerHTML=logs.length?logs.map(x=>`<div class="detail-row">${esc(names.get(x.station_id)||'资源站')} · ${esc(x.action||'推送')} · ${esc(new Date(x.posted_at).toLocaleString())}</div>`).join(''):'<div class="empty-detail">暂无推送记录</div>'}catch(e){const el=document.getElementById('channel-history');if(el)el.innerHTML='<div class="empty-detail">推送记录暂时不可用</div>'}
+}
+function closeChannelDetail(){document.getElementById('channel-detail-modal').classList.add('hidden')}
 function render(){
   const q=document.getElementById('search').value.toLowerCase();
   const sb=document.getElementById('show-blocked').checked;
@@ -196,7 +212,7 @@ async function api(path,method='GET',body=null){
   const opts={method,headers:{}};if(key)opts.headers['X-API-Key']=key;
   if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
   try{const response=await fetch(server+path,opts);const r=await response.json();
-  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else addLog('err',`${path} -> ${r.error||('HTTP '+response.status)}`);}catch(e){addLog('err',`${path} -> ${e.message}`)}
+  if(r.ok){addLog('ok',`${method} ${path}`);await loadStats();await loadStations();render();}else {const msg=`${path} -> ${r.error||('HTTP '+response.status)}`;addLog('err',msg);showToast(msg,'err');}}catch(e){addLog('err',`${path} -> ${e.message}`);showToast(`${path} -> ${e.message}`,'err')}
 }
 async function saveChannels(){
   try{await api('/api/config','PUT',{channel_map:channelMap});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道保存失败: '+e.message)}
@@ -222,11 +238,11 @@ function switchTab(name){
   document.getElementById('tab-'+name).classList.remove('hidden');
   if(name==='channels')loadConfig();
 }
-function addLog(type,msg){
-  const el=document.getElementById('log-el');const t=new Date().toLocaleTimeString();
-  el.innerHTML+=`<div><span class="ts">${t}</span> <span class="${type}">${msg}</span></div>`;
-  if(el.children.length>200)el.firstChild.remove();el.scrollTop=el.scrollHeight;
-}
+let logEntries=[];
+function addLog(type,msg){logEntries.push({type,msg,time:new Date().toLocaleTimeString()});if(logEntries.length>200)logEntries.shift();renderLogs()}
+function renderLogs(){const el=document.getElementById('log-el');if(!el)return;const filter=document.getElementById('log-filter')?.value||'all';el.innerHTML=logEntries.filter(x=>filter==='all'||x.type===filter).map(x=>`<div><span class="ts">${esc(x.time)}</span> <span class="${x.type}">${esc(x.msg)}</span></div>`).join('');el.scrollTop=el.scrollHeight}
+function clearLogs(){logEntries=[];renderLogs()}
+function showToast(msg,type='info'){const area=document.getElementById('toast-area');if(!area)return;const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;area.appendChild(el);setTimeout(()=>el.remove(),4500)}
 function connectWS(){
   const u=new URL(server);u.protocol=u.protocol==='https:'?'wss:':'ws:';u.pathname='/ws';if(key)u.searchParams.set('api_key',key);
   ws=new WebSocket(u.toString());
