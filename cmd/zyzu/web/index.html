@@ -99,7 +99,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
   <div id="tab-stations"><table><thead><tr><th>名称</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
-      <label>添加频道（分类）<input id="channel-category" placeholder="adult"></label>
+      <label>添加频道（分类）<select id="channel-category"><option value="成人">成人</option><option value="综合影视">综合影视</option><option value="电影">电影</option><option value="电视剧">电视剧</option><option value="动漫">动漫</option><option value="综艺">综艺</option><option value="纪录片">纪录片</option></select></label>
       <label>频道 ID<input id="channel-id" type="number" placeholder="-1001234567890"></label>
       <button class="btn btn-g" onclick="addChannel()">添加频道</button>
       <button class="btn btn-r" onclick="removeChannel()">删除频道</button>
@@ -181,13 +181,14 @@ async function loadStats(){
   const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok)document.getElementById('s-running').textContent=s.data.running?'RUNNING':'IDLE'}catch(e){}
 }
 async function loadStations(){
-  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data}catch(e){}
+  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories()}catch(e){}
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
   if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;
-  if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};renderChannelCards()}}catch(e){}
-}
+  if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};refreshChannelCategories();renderChannelCards()}}catch(e){}
+ }
+function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
 function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><small style="display:block;color:#888;margin-top:8px">点击查看详情</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
 async function openChannelDetail(category,id){
   category=decodeURIComponent(category);id=decodeURIComponent(id);
