@@ -165,9 +165,6 @@ func (s *Scheduler) runContent() {
 	if limit <= 0 {
 		limit = 10
 	}
-	if len(items) > limit {
-		items = items[:limit]
-	}
 	// Keep this state in SQLite so a later cron run (or a process restart)
 	// cannot upload the same source item again.
 	filtered := items[:0]
@@ -178,12 +175,25 @@ func (s *Scheduler) runContent() {
 			log.Printf("[content] dedup check %s: %v", item.Title, checkErr)
 			continue
 		}
-		if !posted {
-			item.Key = key
-			filtered = append(filtered, item)
+		if posted {
+			continue
 		}
+		cooldown, cooldownErr := s.Store.ContentInFailureCooldown(key, 6*time.Hour)
+		if cooldownErr != nil || cooldown {
+			if cooldown {
+				log.Printf("[content] skip %s: download failure cooldown", item.Title)
+			}
+			continue
+		}
+		item.Key = key
+		filtered = append(filtered, item)
 	}
 	items = filtered
+	// Apply the limit after deduplication. Otherwise old/already-posted items
+	// at the head of the feed can consume the whole batch and hide new items.
+	if len(items) > limit {
+		items = items[:limit]
+	}
 	if len(items) == 0 {
 		log.Printf("[scheduler] content: no new items")
 		return
@@ -229,17 +239,21 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 			continue
 		}
 
-		// Get the first episode m3u8 URL
-		parts := strings.SplitN(item.Episodes[0], "$", 2)
-		if len(parts) != 2 {
-			continue
+		var filePath string
+		var err error
+		for _, episode := range item.Episodes {
+			parts := strings.SplitN(episode, "$", 2)
+			if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+				continue
+			}
+			filePath, err = s.Video.Download(parts[1], item.Title)
+			if err == nil {
+				break
+			}
+			log.Printf("[video] download %s (%s): %v", item.Title, parts[0], err)
 		}
-		m3u8URL := parts[1]
-
-		// Download + convert
-		filePath, err := s.Video.Download(m3u8URL, item.Title)
-		if err != nil {
-			log.Printf("[video] download %s: %v", item.Title, err)
+		if err != nil || filePath == "" {
+			_ = s.Store.LogContentFailure(content.DedupKey(item))
 			continue
 		}
 

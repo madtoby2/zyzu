@@ -105,6 +105,12 @@ func (s *Store) migrate() error {
 		posted_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_content_posts_posted_at ON content_posts(posted_at);
+	CREATE TABLE IF NOT EXISTS content_failures (
+		content_key TEXT PRIMARY KEY,
+		failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		fail_count INTEGER DEFAULT 1
+	);
+	CREATE INDEX IF NOT EXISTS idx_content_failures_failed_at ON content_failures(failed_at);
 	`
 	_, err := s.db.Exec(ddl)
 	if err != nil {
@@ -124,6 +130,22 @@ func (s *Store) HasContentPosted(key string) (bool, error) {
 
 func (s *Store) LogContentPost(key string) error {
 	_, err := s.db.Exec("INSERT OR IGNORE INTO content_posts (content_key) VALUES (?)", key)
+	if err == nil {
+		_, _ = s.db.Exec("DELETE FROM content_failures WHERE content_key=?", key)
+	}
+	return err
+}
+
+func (s *Store) ContentInFailureCooldown(key string, within time.Duration) (bool, error) {
+	var n int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM content_failures WHERE content_key=? AND failed_at > ?", key, time.Now().Add(-within)).Scan(&n)
+	return n > 0, err
+}
+
+func (s *Store) LogContentFailure(key string) error {
+	_, err := s.db.Exec(`INSERT INTO content_failures (content_key, failed_at, fail_count)
+		VALUES (?, CURRENT_TIMESTAMP, 1)
+		ON CONFLICT(content_key) DO UPDATE SET failed_at=CURRENT_TIMESTAMP, fail_count=fail_count+1`, key)
 	return err
 }
 
