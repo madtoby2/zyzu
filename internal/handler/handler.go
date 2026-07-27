@@ -188,35 +188,40 @@ func (h *Handler) probeStation(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	migrated := false
-	// Retired API subdomains commonly fail with DNS, TLS, timeout, or an HTTP
-	// error while the same path remains available on the apex domain.
+	// Retired endpoints may fail with DNS/TLS/HTTP errors while an equivalent
+	// public API remains available on the apex host or over HTTP. Try only
+	// explicit URL fallbacks; never disable certificate verification globally.
 	if err != nil || resp.StatusCode >= 400 {
 		if resp != nil {
 			resp.Body.Close()
 		}
-		fallback := apexAPIFallback(st.APIURL)
-		if fallback == "" || fallback == st.APIURL {
-			if err != nil {
-				jsonError(w, "probe failed: "+err.Error(), 502)
-			} else {
-				jsonError(w, fmt.Sprintf("probe failed: HTTP %d", resp.StatusCode), 502)
+		var lastErr error = err
+		var fallback string
+		for _, candidate := range probeFallbacks(st.APIURL) {
+			req2, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, candidate, nil)
+			if reqErr != nil {
+				lastErr = reqErr
+				continue
 			}
-			return
+			resp, reqErr = client.Do(req2)
+			if reqErr != nil {
+				lastErr = reqErr
+				continue
+			}
+			if resp.StatusCode >= 400 {
+				lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+				resp.Body.Close()
+				continue
+			}
+			fallback = candidate
+			break
 		}
-		req2, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, fallback, nil)
-		if reqErr != nil {
-			jsonError(w, "probe failed: "+reqErr.Error(), 502)
-			return
-		}
-		resp, err = client.Do(req2)
-		if err != nil {
-			jsonError(w, "probe failed: "+err.Error(), 502)
-			return
-		}
-		if resp.StatusCode >= 400 {
-			status := resp.StatusCode
-			resp.Body.Close()
-			jsonError(w, fmt.Sprintf("probe failed: HTTP %d", status), 502)
+		if fallback == "" {
+			if lastErr != nil {
+				jsonError(w, "probe failed: "+lastErr.Error(), 502)
+			} else {
+				jsonError(w, "probe failed", 502)
+			}
 			return
 		}
 		if updateErr := h.store.UpdateAPIURL(slug, fallback); updateErr != nil {
@@ -256,6 +261,21 @@ func apexAPIFallback(raw string) string {
 	}
 	u.Host = strings.TrimPrefix(u.Host, "api.")
 	return u.String()
+}
+
+func probeFallbacks(raw string) []string {
+	var out []string
+	if fallback := apexAPIFallback(raw); fallback != "" && fallback != raw {
+		out = append(out, fallback)
+	}
+	if u, err := url.Parse(raw); err == nil && u.Scheme == "https" {
+		u.Scheme = "http"
+		candidate := u.String()
+		if candidate != raw {
+			out = append(out, candidate)
+		}
+	}
+	return out
 }
 
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
