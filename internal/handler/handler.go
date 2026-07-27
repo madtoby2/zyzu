@@ -265,15 +265,23 @@ func apexAPIFallback(raw string) string {
 
 func probeFallbacks(raw string) []string {
 	var out []string
+	seen := map[string]bool{}
+	add := func(candidate string) {
+		if candidate != "" && candidate != raw && !seen[candidate] {
+			seen[candidate] = true
+			out = append(out, candidate)
+		}
+	}
 	if fallback := apexAPIFallback(raw); fallback != "" && fallback != raw {
-		out = append(out, fallback)
+		add(fallback)
+		if u, err := url.Parse(fallback); err == nil && u.Scheme == "https" {
+			u.Scheme = "http"
+			add(u.String())
+		}
 	}
 	if u, err := url.Parse(raw); err == nil && u.Scheme == "https" {
 		u.Scheme = "http"
-		candidate := u.String()
-		if candidate != raw {
-			out = append(out, candidate)
-		}
+		add(u.String())
 	}
 	return out
 }
