@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madtoby2/zyzu/internal/content"
@@ -19,7 +20,13 @@ type Poster struct {
 	client      *http.Client
 }
 
+// Telethon uses SQLite-backed session files. Serialize bridge invocations so
+// login requests cannot race with uploads/status checks on the same session.
+var telethonMu sync.Mutex
+
 func TelethonAction(action string, phone, code, password string) ([]byte, error) {
+	telethonMu.Lock()
+	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
 		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
@@ -59,6 +66,8 @@ func (p *Poster) PostHTML(text string) (int, error) {
 }
 
 func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
+	telethonMu.Lock()
+	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
 		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
@@ -123,6 +132,8 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string) 
 }
 
 func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumbPath string) (int, error) {
+	telethonMu.Lock()
+	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
 	if python == "" {
 		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
