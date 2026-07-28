@@ -28,11 +28,17 @@ async def main():
     # instead of treating a bare -100... ID as an invalid channel object.
     entity = await client.get_input_entity(chat_id) if chat_id is not None else None
     if req.get('action') == 'upload_video':
-        kwargs = {'caption': req.get('caption', ''), 'parse_mode': 'html', 'supports_streaming': True}
-        if req.get('thumb_path'):
-            kwargs['thumb'] = req['thumb_path']
+        kwargs = {
+            'caption': req.get('caption', ''),
+            'parse_mode': 'html',
+            'supports_streaming': True,
+            'force_document': False,
+        }
+        thumb_path = req.get('thumb_path')
+        if thumb_path and os.path.isfile(thumb_path):
+            kwargs['thumb'] = thumb_path
         msg = await client.send_file(entity, req['file_path'], **kwargs)
-        print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
+        print(json.dumps({'message_id': msg.id, 'thumb_submitted': bool(kwargs.get('thumb'))})); await client.disconnect(); return
     msg = await client.send_message(entity, req['text'])
     print(json.dumps({'message_id': msg.id}))
     await client.disconnect()

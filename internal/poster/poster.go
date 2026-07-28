@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -105,11 +107,13 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string) 
 	}
 	thumbPath := ""
 	if coverURL != "" {
-		thumbPath = filePath + ".jpg"
-		if err := downloadCover(coverURL, thumbPath); err != nil {
-			thumbPath = ""
+		var err error
+		thumbPath, err = prepareCover(coverURL, filePath)
+		if err != nil {
+			log.Printf("[cover] 封面处理失败，视频继续上传: url=%s error=%v", coverURL, err)
+		} else {
+			defer os.Remove(thumbPath)
 		}
-		defer os.Remove(thumbPath)
 	}
 	return p.sendTelethonVideo(filePath, caption, chatID, thumbPath)
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
@@ -163,25 +167,84 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumb
 	if result.Error != "" {
 		return 0, errors.New(result.Error)
 	}
+	if thumbPath != "" {
+		log.Printf("[cover] 封面已随视频提交: %s", thumbPath)
+	}
 	return result.MessageID, nil
 }
 
-func downloadCover(rawURL, path string) error {
-	resp, err := http.Get(rawURL)
+func prepareCover(rawURL, videoPath string) (string, error) {
+	const maxCoverBytes = 10 << 20
+
+	rawPath := videoPath + ".cover"
+	thumbPath := videoPath + ".thumb.jpg"
+	defer os.Remove(rawPath)
+	_ = os.Remove(thumbPath)
+
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return err
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ZYZU/1.0)")
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("cover HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("cover HTTP %d", resp.StatusCode)
 	}
-	f, err := os.Create(path)
+
+	f, err := os.Create(rawPath)
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer f.Close()
-	_, err = f.ReadFrom(resp.Body)
-	return err
+	n, copyErr := io.Copy(f, io.LimitReader(resp.Body, maxCoverBytes+1))
+	closeErr := f.Close()
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if n == 0 {
+		return "", errors.New("cover response is empty")
+	}
+	if n > maxCoverBytes {
+		return "", fmt.Errorf("cover is larger than %d MB", maxCoverBytes>>20)
+	}
+
+	// Telegram custom video thumbnails must be JPEG, no larger than 320x320
+	// and below 200 KB. Resource sites often return WebP/PNG data under a
+	// .jpg URL, so always decode and normalize it with ffmpeg.
+	qualities := []string{"5", "10", "16"}
+	for _, quality := range qualities {
+		_ = os.Remove(thumbPath)
+		cmd := exec.Command(
+			"ffmpeg", "-y", "-loglevel", "error",
+			"-i", rawPath,
+			"-vf", "scale=320:320:force_original_aspect_ratio=decrease",
+			"-frames:v", "1", "-q:v", quality,
+			thumbPath,
+		)
+		if output, runErr := cmd.CombinedOutput(); runErr != nil {
+			return "", fmt.Errorf("convert cover: %v: %s", runErr, strings.TrimSpace(string(output)))
+		}
+		info, statErr := os.Stat(thumbPath)
+		if statErr != nil {
+			return "", statErr
+		}
+		if info.Size() <= 200<<10 {
+			log.Printf("[cover] 封面已就绪: %s (%d KB)", rawURL, (info.Size()+1023)/1024)
+			return thumbPath, nil
+		}
+	}
+
+	_ = os.Remove(thumbPath)
+	return "", errors.New("converted cover is larger than Telegram's 200 KB limit")
 }
 
 func (p *Poster) PostPhoto(photoURL, caption, category string) (int, error) {
