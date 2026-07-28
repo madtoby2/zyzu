@@ -28,8 +28,14 @@ func Classify(typeName string, tags []string) string {
 		return "variety"
 	}
 
-	// Movies / TV series
-	if contains(t, "剧") || contains(t, "片") || contains(t, "电影") {
+	// TV series get their own channel group when configured.
+	if contains(t, "电视剧") || contains(t, "连续剧") || contains(t, "网剧") ||
+		contains(t, "剧") {
+		return "tv"
+	}
+
+	// Movies
+	if contains(t, "片") || contains(t, "电影") {
 		return "movie"
 	}
 

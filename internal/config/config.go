@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -68,8 +69,10 @@ func (c *Config) PickChannel(category string) int64 {
 // ChannelsFor returns all channel IDs for a given category.
 func (c *Config) ChannelsFor(category string) []int64 {
 	if len(c.ChannelMap) > 0 {
-		if ids, ok := c.ChannelMap[category]; ok && len(ids) > 0 {
-			return ids
+		for _, key := range channelKeys(category) {
+			if ids, ok := c.ChannelMap[key]; ok && len(ids) > 0 {
+				return ids
+			}
 		}
 		if ids, ok := c.ChannelMap["default"]; ok && len(ids) > 0 {
 			return ids
@@ -97,6 +100,24 @@ func (c *Config) ChannelsFor(category string) []int64 {
 		return []int64{c.ChannelID}
 	}
 	return nil
+}
+
+func channelKeys(category string) []string {
+	category = strings.TrimSpace(strings.ToLower(category))
+	switch category {
+	case "adult", "成人":
+		return []string{"adult", "成人"}
+	case "movie", "电影", "电影资源站":
+		return []string{"movie", "电影", "电影资源站"}
+	case "tv", "电视剧", "电视":
+		return []string{"tv", "电视剧", "电视"}
+	case "anime", "动漫", "动画":
+		return []string{"anime", "动漫", "动画"}
+	case "variety", "综艺":
+		return []string{"variety", "综艺"}
+	default:
+		return []string{category}
+	}
 }
 
 // HasAnyChannel returns true if any channel is configured.

@@ -274,6 +274,11 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			continue
 		}
+		// Videos are temporary upload artifacts; remove them immediately after
+		// Telegram confirms the upload to prevent the VPS disk filling up.
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			log.Printf("[video] cleanup %s: %v", filePath, removeErr)
+		}
 
 		posted++
 		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
