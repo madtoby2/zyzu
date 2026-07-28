@@ -20,6 +20,13 @@ func New(workDir string) *Downloader {
 	return &Downloader{WorkDir: workDir, Timeout: 0}
 }
 
+// HasComplete reports whether a fully finalized file can be resumed for upload.
+func (d *Downloader) HasComplete(filename string) bool {
+	path := filepath.Join(d.WorkDir, sanitize(filename)+".full.mp4")
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
+}
+
 // Download converts an m3u8 URL to an mp4 file. Returns the local file path.
 func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	// Sanitize filename

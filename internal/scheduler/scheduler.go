@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -192,6 +193,11 @@ func (s *Scheduler) runContent() {
 		item.Key = key
 		filtered = append(filtered, item)
 	}
+	// Resume completed-but-not-yet-posted files first after a crash or restart.
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return s.Video.HasComplete(filtered[i].Title) && !s.Video.HasComplete(filtered[j].Title)
+	})
+
 	// Apply the limit after deduplication and distribute slots across every
 	// configured category. Otherwise the newest high-volume feed can starve
 	// movie and TV channels indefinitely.
