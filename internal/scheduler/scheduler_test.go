@@ -5,6 +5,7 @@ import (
 
 	"github.com/madtoby2/zyzu/internal/config"
 	"github.com/madtoby2/zyzu/internal/content"
+	"github.com/madtoby2/zyzu/internal/store"
 )
 
 func TestSelectRoutableItemsBalancesConfiguredChannels(t *testing.T) {
@@ -30,6 +31,49 @@ func TestSelectRoutableItemsBalancesConfiguredChannels(t *testing.T) {
 	for i := range want {
 		if got[i].Title != want[i] {
 			t.Errorf("item %d = %q, want %q", i, got[i].Title, want[i])
+		}
+	}
+}
+
+func TestSelectRoutableItemsBalancesSourcesWithinCategory(t *testing.T) {
+	cfg := &config.Config{ChannelMap: map[string][]int64{"电影": {1}}}
+	items := []content.ContentItem{
+		{Title: "source-a-1", Category: "movie", SourceURL: "https://a.test/api"},
+		{Title: "source-a-2", Category: "movie", SourceURL: "https://a.test/api"},
+		{Title: "source-b-1", Category: "movie", SourceURL: "https://b.test/api"},
+	}
+
+	got := selectRoutableItems(items, 3, cfg)
+	want := []string{"source-a-1", "source-b-1", "source-a-2"}
+	for i := range want {
+		if got[i].Title != want[i] {
+			t.Errorf("item %d = %q, want %q", i, got[i].Title, want[i])
+		}
+	}
+}
+
+func TestSelectContentSourcesIncludesConfiguredCategories(t *testing.T) {
+	cfg := &config.Config{ChannelMap: map[string][]int64{
+		"成人":  {1},
+		"电影":  {2},
+		"电视剧": {3},
+	}}
+	all := []store.Station{
+		{Name: "fast-general", APIURL: "https://fast.test", Category: "电影资源站"},
+		{Name: "adult", APIURL: "https://adult.test", Category: "成人"},
+		{Name: "movie-a", APIURL: "https://movie-a.test", Category: "电影"},
+		{Name: "movie-b", APIURL: "https://movie-b.test", Category: "电影"},
+		{Name: "tv", APIURL: "https://tv.test", Category: "电视剧"},
+	}
+
+	got := selectContentSources(all, cfg, 1, 2)
+	names := make(map[string]bool)
+	for _, source := range got {
+		names[source.Name] = true
+	}
+	for _, want := range []string{"fast-general", "adult", "movie-a", "movie-b", "tv"} {
+		if !names[want] {
+			t.Errorf("source %q was not selected", want)
 		}
 	}
 }

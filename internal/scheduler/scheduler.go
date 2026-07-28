@@ -146,13 +146,15 @@ func (s *Scheduler) runContent() {
 		mode = "split"
 	}
 
-	// Pull enough unique sources to cover the configured channel categories.
-	// A smaller global list was easily dominated by adult-only feeds.
-	sources, err := content.GetActiveSources(s.Store, 8)
+	allSources, err := content.GetActiveSources(s.Store, 0)
 	if err != nil {
 		log.Printf("[scheduler] get sources: %v", err)
 		return
 	}
+	// Keep fast global sources, then add explicitly categorized sources for
+	// each configured channel. This makes the UI's station categories affect
+	// what the corresponding channel actually receives.
+	sources := selectContentSources(allSources, s.Cfg, 5, 2)
 	if len(sources) == 0 {
 		return
 	}
@@ -296,8 +298,13 @@ func selectRoutableItems(items []content.ContentItem, limit int, cfg *config.Con
 		return nil
 	}
 
-	buckets := make(map[string][]content.ContentItem)
-	var order []string
+	type categoryBucket struct {
+		sourceOrder []string
+		items       map[string][]content.ContentItem
+		nextSource  int
+	}
+	buckets := make(map[string]*categoryBucket)
+	var categoryOrder []string
 	for _, item := range items {
 		category := item.Category
 		if category == "" {
@@ -306,23 +313,43 @@ func selectRoutableItems(items []content.ContentItem, limit int, cfg *config.Con
 		if len(cfg.ChannelsFor(category)) == 0 {
 			continue
 		}
-		if _, ok := buckets[category]; !ok {
-			order = append(order, category)
+		bucket, ok := buckets[category]
+		if !ok {
+			bucket = &categoryBucket{items: make(map[string][]content.ContentItem)}
+			buckets[category] = bucket
+			categoryOrder = append(categoryOrder, category)
 		}
-		buckets[category] = append(buckets[category], item)
+		sourceKey := strings.TrimSpace(item.SourceURL)
+		if sourceKey == "" {
+			sourceKey = strings.TrimSpace(item.Source)
+		}
+		if _, ok := bucket.items[sourceKey]; !ok {
+			bucket.sourceOrder = append(bucket.sourceOrder, sourceKey)
+		}
+		bucket.items[sourceKey] = append(bucket.items[sourceKey], item)
 	}
 
 	result := make([]content.ContentItem, 0, limit)
 	for len(result) < limit {
 		added := false
-		for _, category := range order {
+		for _, category := range categoryOrder {
 			bucket := buckets[category]
-			if len(bucket) == 0 {
+			if len(bucket.sourceOrder) == 0 {
 				continue
 			}
-			result = append(result, bucket[0])
-			buckets[category] = bucket[1:]
-			added = true
+			for checked := 0; checked < len(bucket.sourceOrder); checked++ {
+				index := bucket.nextSource % len(bucket.sourceOrder)
+				bucket.nextSource = (index + 1) % len(bucket.sourceOrder)
+				sourceKey := bucket.sourceOrder[index]
+				sourceItems := bucket.items[sourceKey]
+				if len(sourceItems) == 0 {
+					continue
+				}
+				result = append(result, sourceItems[0])
+				bucket.items[sourceKey] = sourceItems[1:]
+				added = true
+				break
+			}
 			if len(result) == limit {
 				break
 			}
@@ -332,6 +359,59 @@ func selectRoutableItems(items []content.ContentItem, limit int, cfg *config.Con
 		}
 	}
 	return result
+}
+
+func selectContentSources(all []store.Station, cfg *config.Config, baseLimit, perCategory int) []store.Station {
+	selected := make([]store.Station, 0, baseLimit+len(cfg.ChannelMap)*perCategory)
+	seen := make(map[string]bool)
+	add := func(source store.Station) {
+		key := strings.TrimRight(strings.ToLower(strings.TrimSpace(source.APIURL)), "/")
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		selected = append(selected, source)
+	}
+
+	for i := 0; i < len(all) && i < baseLimit; i++ {
+		add(all[i])
+	}
+	for channelCategory := range cfg.ChannelMap {
+		matched := 0
+		for _, source := range all {
+			if !stationCategoryMatches(channelCategory, source.Category) {
+				continue
+			}
+			before := len(selected)
+			add(source)
+			if len(selected) > before {
+				matched++
+			}
+			if matched == perCategory {
+				break
+			}
+		}
+	}
+	return selected
+}
+
+func stationCategoryMatches(channelCategory, stationCategory string) bool {
+	channelCategory = strings.TrimSpace(strings.ToLower(channelCategory))
+	stationCategory = strings.TrimSpace(strings.ToLower(stationCategory))
+	switch channelCategory {
+	case "adult", "成人":
+		return stationCategory == "adult" || stationCategory == "成人"
+	case "movie", "电影":
+		return stationCategory == "movie" || stationCategory == "电影"
+	case "tv", "电视剧", "电视":
+		return stationCategory == "tv" || stationCategory == "电视剧" || stationCategory == "电视"
+	case "anime", "动漫", "动画":
+		return stationCategory == "anime" || stationCategory == "动漫" || stationCategory == "动画"
+	case "variety", "综艺":
+		return stationCategory == "variety" || stationCategory == "综艺"
+	default:
+		return channelCategory == stationCategory
+	}
 }
 
 func formatVideoCaption(format string, item content.ContentItem) string {
