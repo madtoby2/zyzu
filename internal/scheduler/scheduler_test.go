@@ -77,3 +77,22 @@ func TestSelectContentSourcesIncludesConfiguredCategories(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatVideoCaptionFollowsRouteChannel(t *testing.T) {
+	item := content.ContentItem{
+		Title:    "测试标题",
+		Category: "default",
+		Intro:    "测试简介",
+	}
+	format := "Madtoby的AV精选\n{title}\n分类：{category}\n原分类：{raw_category}"
+
+	adult := formatVideoCaption(format, item, "成人")
+	if adult != "Madtoby的AV精选\n测试标题\n分类：AV\n原分类：default" {
+		t.Fatalf("adult caption = %q", adult)
+	}
+
+	tv := formatVideoCaption(format, item, "电视剧")
+	if tv != "Madtoby的电视剧\n测试标题\n分类：电视剧\n原分类：default" {
+		t.Fatalf("tv caption = %q", tv)
+	}
+}

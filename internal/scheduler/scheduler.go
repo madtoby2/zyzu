@@ -302,14 +302,14 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			continue
 		}
 
-		caption := formatVideoCaption(s.Cfg.VideoFormat, item)
+		caption := formatVideoCaption(s.Cfg.VideoFormat, item, category)
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
 
 		// The configured template is authoritative; discard legacy appended source text.
-		caption = formatVideoCaption(s.Cfg.VideoFormat, item)
+		caption = formatVideoCaption(s.Cfg.VideoFormat, item, category)
 		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
@@ -453,15 +453,57 @@ func stationCategoryMatches(channelCategory, stationCategory string) bool {
 	}
 }
 
-func formatVideoCaption(format string, item content.ContentItem) string {
+func formatVideoCaption(format string, item content.ContentItem, routeCategory string) string {
 	if strings.TrimSpace(format) == "" {
-		format = "[资源码] {code}\n{title}\n分类：{category}\n来源：{source}"
+		format = "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}"
 	}
+	channelLabel, categoryLabel := videoCaptionLabels(routeCategory)
+
+	// Migrate the previously hard-coded heading at render time so existing
+	// installations immediately produce the correct text for every channel.
+	format = strings.ReplaceAll(format, "Madtoby的AV精选", "Madtoby的{channel}")
+
 	code := ""
 	if item.VodID > 0 {
 		code = fmt.Sprintf("%d", item.VodID)
 	}
-	return strings.NewReplacer("{code}", code, "{id}", code, "{title}", escapeHTML(item.Title), "{name}", escapeHTML(item.Title), "{category}", escapeHTML(item.Category), "{type}", escapeHTML(item.TypeName), "{remarks}", escapeHTML(item.Remarks), "{source}", escapeHTML(item.Source), "{source_url}", escapeHTML(item.SourceURL), "{intro}", escapeHTML(item.Intro), "{cover}", escapeHTML(item.CoverURL), "{updated_at}", escapeHTML(item.VodTime)).Replace(format)
+	return strings.NewReplacer(
+		"{code}", code,
+		"{id}", code,
+		"{title}", escapeHTML(item.Title),
+		"{name}", escapeHTML(item.Title),
+		"{channel}", escapeHTML(channelLabel),
+		"{category}", escapeHTML(categoryLabel),
+		"{raw_category}", escapeHTML(item.Category),
+		"{type}", escapeHTML(item.TypeName),
+		"{remarks}", escapeHTML(item.Remarks),
+		"{source}", escapeHTML(item.Source),
+		"{source_url}", escapeHTML(item.SourceURL),
+		"{intro}", escapeHTML(item.Intro),
+		"{cover}", escapeHTML(item.CoverURL),
+		"{updated_at}", escapeHTML(item.VodTime),
+	).Replace(format)
+}
+
+func videoCaptionLabels(category string) (channelLabel, categoryLabel string) {
+	switch strings.TrimSpace(strings.ToLower(category)) {
+	case "adult", "成人", "av":
+		return "AV精选", "AV"
+	case "tv", "电视剧", "电视":
+		return "电视剧", "电视剧"
+	case "movie", "电影":
+		return "电影", "电影"
+	case "anime", "动漫", "动画":
+		return "动漫", "动漫"
+	case "variety", "综艺":
+		return "综艺", "综艺"
+	case "documentary", "纪录片":
+		return "纪录片", "纪录片"
+	case "default", "综合影视", "":
+		return "影视大全", "综合影视"
+	default:
+		return category, category
+	}
 }
 
 func (s *Scheduler) runPhotoPipeline(items []content.ContentItem) int {

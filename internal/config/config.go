@@ -30,7 +30,7 @@ func Default() *Config {
 		ContentMode:  "video",
 		ContentLimit: 10,
 		PostFormat:   "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`",
-		VideoFormat:  "🎬 {code}\n{title}\n分类：{category}\n来源：{source}",
+		VideoFormat:  "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}",
 	}
 }
 
