@@ -72,7 +72,11 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		return "", fmt.Errorf("finalize output: %w", err)
 	}
 
-	log.Printf("[video] downloaded %s -> %s (%.1fMB)", m3u8URL[:60], filename, float64(info.Size())/1024/1024)
+	logURL := m3u8URL
+	if len(logURL) > 60 {
+		logURL = logURL[:60]
+	}
+	log.Printf("[video] downloaded %s -> %s (%.1fMB)", logURL, filename, float64(info.Size())/1024/1024)
 	return outPath, nil
 }
 
