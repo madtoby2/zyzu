@@ -277,10 +277,16 @@ func GetActiveSources(st *store.Store, limit int) ([]store.Station, error) {
 	}
 
 	var active []store.Station
+	seenAPI := make(map[string]bool)
 	for _, s := range all {
 		if s.APIURL == "" || s.Blacklisted {
 			continue
 		}
+		apiKey := strings.TrimRight(strings.ToLower(strings.TrimSpace(s.APIURL)), "/")
+		if seenAPI[apiKey] {
+			continue
+		}
+		seenAPI[apiKey] = true
 		active = append(active, s)
 	}
 

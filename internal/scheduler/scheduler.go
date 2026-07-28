@@ -146,7 +146,9 @@ func (s *Scheduler) runContent() {
 		mode = "split"
 	}
 
-	sources, err := content.GetActiveSources(s.Store, 5)
+	// Pull enough unique sources to cover the configured channel categories.
+	// A smaller global list was easily dominated by adult-only feeds.
+	sources, err := content.GetActiveSources(s.Store, 8)
 	if err != nil {
 		log.Printf("[scheduler] get sources: %v", err)
 		return
@@ -188,12 +190,10 @@ func (s *Scheduler) runContent() {
 		item.Key = key
 		filtered = append(filtered, item)
 	}
-	items = filtered
-	// Apply the limit after deduplication. Otherwise old/already-posted items
-	// at the head of the feed can consume the whole batch and hide new items.
-	if len(items) > limit {
-		items = items[:limit]
-	}
+	// Apply the limit after deduplication and distribute slots across every
+	// configured category. Otherwise the newest high-volume feed can starve
+	// movie and TV channels indefinitely.
+	items = selectRoutableItems(filtered, limit, s.Cfg)
 	if len(items) == 0 {
 		log.Printf("[scheduler] content: no new items")
 		return
@@ -274,6 +274,7 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			continue
 		}
+		uploadedSize := fileSize(filePath)
 		// Videos are temporary upload artifacts; remove them immediately after
 		// Telegram confirms the upload to prevent the VPS disk filling up.
 		if removeErr := os.Remove(filePath); removeErr != nil {
@@ -284,10 +285,53 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
 			log.Printf("[content] record %s: %v", item.Title, err)
 		}
-		log.Printf("[video] posted: %s (%.0fMB)", item.Title, float64(fileSize(filePath))/1024/1024)
+		log.Printf("[video] posted: %s (category=%s, %.0fMB)", item.Title, cat, float64(uploadedSize)/1024/1024)
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
 	return posted
+}
+
+func selectRoutableItems(items []content.ContentItem, limit int, cfg *config.Config) []content.ContentItem {
+	if limit <= 0 {
+		return nil
+	}
+
+	buckets := make(map[string][]content.ContentItem)
+	var order []string
+	for _, item := range items {
+		category := item.Category
+		if category == "" {
+			category = "default"
+		}
+		if len(cfg.ChannelsFor(category)) == 0 {
+			continue
+		}
+		if _, ok := buckets[category]; !ok {
+			order = append(order, category)
+		}
+		buckets[category] = append(buckets[category], item)
+	}
+
+	result := make([]content.ContentItem, 0, limit)
+	for len(result) < limit {
+		added := false
+		for _, category := range order {
+			bucket := buckets[category]
+			if len(bucket) == 0 {
+				continue
+			}
+			result = append(result, bucket[0])
+			buckets[category] = bucket[1:]
+			added = true
+			if len(result) == limit {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return result
 }
 
 func formatVideoCaption(format string, item content.ContentItem) string {
