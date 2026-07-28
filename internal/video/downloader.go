@@ -1,6 +1,7 @@
 package video
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
@@ -100,14 +101,21 @@ func (d *Downloader) Cleanup(keep int) {
 }
 
 func sanitize(s string) string {
+	original := s
 	s = strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
 			return r
 		}
 		return '_'
 	}, s)
-	if len(s) > 80 {
-		s = s[:80]
+	if s == "" {
+		s = "video"
 	}
-	return s
+	sum := sha256.Sum256([]byte(original))
+	suffix := fmt.Sprintf("-%x", sum[:4])
+	maxBase := 80 - len(suffix)
+	if len(s) > maxBase {
+		s = s[:maxBase]
+	}
+	return s + suffix
 }

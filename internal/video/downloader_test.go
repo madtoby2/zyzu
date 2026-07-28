@@ -22,3 +22,11 @@ func TestHasComplete(t *testing.T) {
 		t.Fatal("finalized cache was not detected")
 	}
 }
+
+func TestSanitizeKeepsUnicodeTitlesUnique(t *testing.T) {
+	first := sanitize("不喜欢色色的我吗？")
+	second := sanitize("教我如何不想“她”")
+	if first == second {
+		t.Fatalf("different titles produced the same cache name %q", first)
+	}
+}
