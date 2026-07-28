@@ -38,6 +38,9 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		"-y",                 // overwrite
 		"-loglevel", "error", // quiet
 		"-timeout", "30000000", // 30s socket timeout (microseconds)
+		"-allowed_extensions", "ALL", // some HLS providers disguise media as images
+		"-allowed_segment_extensions", "ALL",
+		"-extension_picky", "0",
 		"-i", m3u8URL,
 		"-c", "copy", // stream copy (fast, no re-encode)
 		"-bsf:a", "aac_adtstoasc",
