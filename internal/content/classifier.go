@@ -6,7 +6,13 @@ func Classify(typeName string, tags []string) string {
 	t := typeName
 
 	// Adult detection
-	adultKeywords := []string{"情色", "成人", "AV", "伦理", "色", "三级", "禁播"}
+	adultKeywords := []string{
+		"情色", "成人", "AV", "伦理", "三级", "禁播", "无码", "有码", "番号",
+		"中出", "内射", "国产自拍", "sex", "fuck", "pussy", "cock", "anal",
+		"uncensored", "xxx", "blowjob", "cumshot", "masturbat", "dildo",
+		"fingers her", "flicks her bean", "penetrat", "threesome", "horny",
+		"banged", "handjob", "dick", "boobs", "tits",
+	}
 	for _, kw := range adultKeywords {
 		if contains(t, kw) {
 			return "adult"

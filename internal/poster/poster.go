@@ -99,6 +99,10 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string) 
 	if _, err := os.Stat(filePath); err != nil {
 		return 0, fmt.Errorf("open video: %w", err)
 	}
+	chatID := p.pickChannel(category)
+	if chatID == 0 {
+		return 0, fmt.Errorf("no channel configured for category %q", category)
+	}
 	thumbPath := ""
 	if coverURL != "" {
 		thumbPath = filePath + ".jpg"
@@ -107,7 +111,7 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string) 
 		}
 		defer os.Remove(thumbPath)
 	}
-	return p.sendTelethonVideo(filePath, caption, p.pickChannel(category), thumbPath)
+	return p.sendTelethonVideo(filePath, caption, chatID, thumbPath)
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 

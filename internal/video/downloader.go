@@ -27,11 +27,13 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	// Use a new cache namespace so files created by the former 120s cap are
 	// never mistaken for complete downloads.
 	outPath := filepath.Join(d.WorkDir, filename+".full.mp4")
+	tmpPath := outPath + ".part.mp4"
 
 	// Skip if already exists
 	if _, err := os.Stat(outPath); err == nil {
 		return outPath, nil
 	}
+	_ = os.Remove(tmpPath)
 
 	// ffmpeg: download and convert
 	args := []string{
@@ -45,7 +47,7 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		"-c", "copy", // stream copy (fast, no re-encode)
 		"-bsf:a", "aac_adtstoasc",
 		"-movflags", "+faststart",
-		outPath,
+		tmpPath,
 	}
 	if d.Timeout > 0 {
 		args = append(args[:len(args)-1], "-t", fmt.Sprintf("%d", d.Timeout), args[len(args)-1])
@@ -56,13 +58,18 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Clean up partial file
-		os.Remove(outPath)
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("ffmpeg: %v: %s", err, string(output))
 	}
 
-	info, err := os.Stat(outPath)
+	info, err := os.Stat(tmpPath)
 	if err != nil || info.Size() == 0 {
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("output file empty or missing")
+	}
+	if err := os.Rename(tmpPath, outPath); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("finalize output: %w", err)
 	}
 
 	log.Printf("[video] downloaded %s -> %s (%.1fMB)", m3u8URL[:60], filename, float64(info.Size())/1024/1024)
