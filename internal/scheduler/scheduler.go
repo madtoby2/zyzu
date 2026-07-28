@@ -235,11 +235,48 @@ func (s *Scheduler) runContent() {
 }
 
 func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
+	groups := make(map[string][]content.ContentItem)
+	var categoryOrder []string
+	for _, item := range items {
+		category := item.Category
+		if category == "" {
+			category = "default"
+		}
+		if _, ok := groups[category]; !ok {
+			categoryOrder = append(categoryOrder, category)
+		}
+		groups[category] = append(groups[category], item)
+	}
+
+	// Download categories independently so a slow full-length movie cannot
+	// block adult or TV channels. Telethon uploads remain serialized in Poster.
+	results := make(chan int, len(categoryOrder))
+	var wg sync.WaitGroup
+	for _, category := range categoryOrder {
+		categoryItems := groups[category]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- s.runVideoCategory(category, categoryItems)
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	posted := 0
+	for count := range results {
+		posted += count
+	}
+	return posted
+}
+
+func (s *Scheduler) runVideoCategory(category string, items []content.ContentItem) int {
 	posted := 0
 	for _, item := range items {
 		if len(item.Episodes) == 0 {
 			continue
 		}
+		log.Printf("[video] processing category=%s source=%s title=%s", category, item.Source, item.Title)
 
 		var filePath string
 		var err error
@@ -259,10 +296,6 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 			continue
 		}
 
-		cat := item.Category
-		if cat == "" {
-			cat = "default"
-		}
 		caption := formatVideoCaption(s.Cfg.VideoFormat, item)
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
@@ -271,7 +304,7 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 
 		// The configured template is authoritative; discard legacy appended source text.
 		caption = formatVideoCaption(s.Cfg.VideoFormat, item)
-		_, err = s.Poster.PostVideo(filePath, caption, cat, item.CoverURL)
+		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			continue
@@ -287,7 +320,7 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
 			log.Printf("[content] record %s: %v", item.Title, err)
 		}
-		log.Printf("[video] posted: %s (category=%s, %.0fMB)", item.Title, cat, float64(uploadedSize)/1024/1024)
+		log.Printf("[video] posted: %s (category=%s, %.0fMB)", item.Title, category, float64(uploadedSize)/1024/1024)
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
 	return posted
