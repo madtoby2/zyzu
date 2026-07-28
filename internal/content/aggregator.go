@@ -284,10 +284,11 @@ func GetActiveSources(st *store.Store, limit int) ([]store.Station, error) {
 		active = append(active, s)
 	}
 
-	// Sort by response time (fastest first)
+	// Sort measured, healthy sources first. Empty/failed probes used to parse as
+	// zero milliseconds and starve known-good sources from the content batch.
 	sort.Slice(active, func(i, j int) bool {
-		ti, _ := time.ParseDuration(strings.ReplaceAll(active[i].ResponseTime, "ms", "ms"))
-		tj, _ := time.ParseDuration(strings.ReplaceAll(active[j].ResponseTime, "ms", "ms"))
+		ti := sourceResponseTime(active[i])
+		tj := sourceResponseTime(active[j])
 		return ti < tj
 	})
 
@@ -295,4 +296,16 @@ func GetActiveSources(st *store.Store, limit int) ([]store.Station, error) {
 		active = active[:limit]
 	}
 	return active, nil
+}
+
+func sourceResponseTime(s store.Station) time.Duration {
+	v := strings.TrimSpace(s.ResponseTime)
+	if v == "" || s.Availability == "0%" {
+		return time.Duration(1<<63 - 1)
+	}
+	d, err := time.ParseDuration(strings.ReplaceAll(v, "ms", "ms"))
+	if err != nil || d <= 0 {
+		return time.Duration(1<<63 - 1)
+	}
+	return d
 }
