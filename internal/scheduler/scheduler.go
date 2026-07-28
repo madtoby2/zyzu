@@ -76,15 +76,17 @@ func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return map[string]interface{}{
-		"running":       s.running,
-		"last_run":      s.lastRun,
-		"last_error":    s.lastError,
-		"new_count":     s.NewCount,
-		"upd_count":     s.UpdCount,
-		"content_count": s.ContentCount,
-		"cron_scrape":   s.Cfg.ScrapeCron,
-		"cron_content":  s.Cfg.ContentCron,
-		"content_mode":  s.Cfg.ContentMode,
+		"running":         s.running || s.contentRun,
+		"scrape_running":  s.running,
+		"content_running": s.contentRun,
+		"last_run":        s.lastRun,
+		"last_error":      s.lastError,
+		"new_count":       s.NewCount,
+		"upd_count":       s.UpdCount,
+		"content_count":   s.ContentCount,
+		"cron_scrape":     s.Cfg.ScrapeCron,
+		"cron_content":    s.Cfg.ContentCron,
+		"content_mode":    s.Cfg.ContentMode,
 	}
 }
 

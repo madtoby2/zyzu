@@ -253,17 +253,19 @@ func buildURL(base string, params map[string]string) string {
 }
 
 // parseEpisodes splits vod_play_url into episode list.
-// Format: "第1集$url1#第2集$url2#..."
+// AppleCMS separates episodes with "#" and independent player/source groups
+// with "$$$": "第1集$url1#第2集$url2$$$正片$url3".
 func parseEpisodes(raw string) []string {
 	if raw == "" {
 		return nil
 	}
-	parts := strings.Split(raw, "#")
 	var eps []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			eps = append(eps, p)
+	for _, group := range strings.Split(raw, "$$$") {
+		for _, episode := range strings.Split(group, "#") {
+			episode = strings.TrimSpace(episode)
+			if episode != "" {
+				eps = append(eps, episode)
+			}
 		}
 	}
 	return eps
