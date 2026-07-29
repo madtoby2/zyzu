@@ -154,3 +154,16 @@ func TestEscapeHTMLDoesNotDoubleEscapeEntities(t *testing.T) {
 		t.Fatalf("escapeHTML() = %q, want %q", got, want)
 	}
 }
+
+func TestFormatVideoCaptionHidesEmptyIntroAndCoverURL(t *testing.T) {
+	item := content.ContentItem{
+		Title:    "测试标题",
+		Category: "tv",
+		CoverURL: "https://img.test/cover.webp",
+	}
+	format := "🎬 {cover}\n{title}\n简介：{intro}\n封面地址：{cover_url}"
+	want := "🎬 \n测试标题\n封面地址：https://img.test/cover.webp"
+	if got := formatVideoCaption(format, item, "电视剧"); got != want {
+		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
+	}
+}

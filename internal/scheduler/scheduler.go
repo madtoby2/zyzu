@@ -608,6 +608,16 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 	// Migrate the previously hard-coded heading at render time so existing
 	// installations immediately produce the correct text for every channel.
 	format = strings.ReplaceAll(format, "Madtoby的AV精选", "Madtoby的{channel}")
+	if strings.TrimSpace(item.Intro) == "" {
+		lines := strings.Split(format, "\n")
+		filtered := lines[:0]
+		for _, line := range lines {
+			if !strings.Contains(line, "{intro}") {
+				filtered = append(filtered, line)
+			}
+		}
+		format = strings.Join(filtered, "\n")
+	}
 
 	code := ""
 	if item.VodID > 0 {
@@ -626,7 +636,8 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{source}", escapeHTML(item.Source),
 		"{source_url}", escapeHTML(item.SourceURL),
 		"{intro}", escapeHTML(item.Intro),
-		"{cover}", escapeHTML(item.CoverURL),
+		"{cover}", "",
+		"{cover_url}", escapeHTML(item.CoverURL),
 		"{updated_at}", escapeHTML(item.VodTime),
 	).Replace(format)
 }
