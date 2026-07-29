@@ -129,3 +129,20 @@ func TestDueContentCategoriesUsesIndependentIntervals(t *testing.T) {
 		t.Fatalf("forced dueContentCategories() = %#v, want %#v", got, want)
 	}
 }
+
+func TestSelectCategoryCandidatesPrefersDifferentSources(t *testing.T) {
+	items := []content.ContentItem{
+		{Key: "a1", Title: "a1", Category: "movie", SourceURL: "https://a.test"},
+		{Key: "a2", Title: "a2", Category: "movie", SourceURL: "https://a.test"},
+		{Key: "b1", Title: "b1", Category: "movie", SourceURL: "https://b.test"},
+		{Key: "tv1", Title: "tv1", Category: "tv", SourceURL: "https://tv.test"},
+	}
+
+	got := selectCategoryCandidates(items, "电影", 3, map[string]bool{})
+	want := []string{"a1", "b1", "a2"}
+	for i := range want {
+		if got[i].Key != want[i] {
+			t.Fatalf("candidate %d = %q, want %q", i, got[i].Key, want[i])
+		}
+	}
+}

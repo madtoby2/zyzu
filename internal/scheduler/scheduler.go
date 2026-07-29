@@ -221,17 +221,8 @@ func (s *Scheduler) runContent(force bool) {
 	claimed := make(map[string]bool)
 	dispatched := 0
 	for _, category := range dueCategories {
-		var selected *content.ContentItem
-		for i := range filtered {
-			item := &filtered[i]
-			if claimed[item.Key] || !stationCategoryMatches(category, item.Category) {
-				continue
-			}
-			selected = item
-			claimed[item.Key] = true
-			break
-		}
-		if selected == nil {
+		candidates := selectCategoryCandidates(filtered, category, 5, claimed)
+		if len(candidates) == 0 {
 			log.Printf("[scheduler] channel=%s: no new matching item", category)
 			continue
 		}
@@ -246,8 +237,7 @@ func (s *Scheduler) runContent(force bool) {
 		s.mu.Unlock()
 
 		dispatched++
-		item := *selected
-		go s.runContentCategory(mode, category, item)
+		go s.runContentCategory(mode, category, candidates)
 	}
 	if dispatched == 0 {
 		log.Printf("[scheduler] content: no channel job dispatched")
@@ -275,7 +265,44 @@ func (s *Scheduler) dueContentCategories(force bool) []string {
 	return categories
 }
 
-func (s *Scheduler) runContentCategory(mode, category string, item content.ContentItem) {
+func selectCategoryCandidates(items []content.ContentItem, category string, limit int, claimed map[string]bool) []content.ContentItem {
+	if limit <= 0 {
+		return nil
+	}
+	result := make([]content.ContentItem, 0, limit)
+	seenSource := make(map[string]bool)
+	add := func(item content.ContentItem) bool {
+		if claimed[item.Key] || !stationCategoryMatches(category, item.Category) {
+			return false
+		}
+		claimed[item.Key] = true
+		result = append(result, item)
+		return len(result) == limit
+	}
+
+	// Prefer different资源站 so one dead CDN cannot consume every retry.
+	for _, item := range items {
+		source := strings.TrimSpace(item.SourceURL)
+		if source == "" {
+			source = strings.TrimSpace(item.Source)
+		}
+		if seenSource[source] || claimed[item.Key] || !stationCategoryMatches(category, item.Category) {
+			continue
+		}
+		seenSource[source] = true
+		if add(item) {
+			return result
+		}
+	}
+	for _, item := range items {
+		if add(item) {
+			break
+		}
+	}
+	return result
+}
+
+func (s *Scheduler) runContentCategory(mode, category string, items []content.ContentItem) {
 	posted := 0
 	defer func() {
 		s.Video.Cleanup(30)
@@ -288,6 +315,7 @@ func (s *Scheduler) runContentCategory(mode, category string, item content.Conte
 
 	switch mode {
 	case "digest":
+		item := items[0]
 		title := fmt.Sprintf("📺 %s更新精选 · %s", category, time.Now().Format("01/02 15:04"))
 		if _, err := s.Poster.PostContentDigest([]content.ContentItem{item}, title, category); err != nil {
 			log.Printf("[scheduler] channel=%s digest: %v", category, err)
@@ -296,9 +324,19 @@ func (s *Scheduler) runContentCategory(mode, category string, item content.Conte
 		_ = s.Store.LogContentPost(item.Key)
 		posted = 1
 	case "video":
-		posted = s.runVideoCategory(category, []content.ContentItem{item})
+		for _, item := range items {
+			if s.runVideoCategory(category, []content.ContentItem{item}) > 0 {
+				posted = 1
+				break
+			}
+		}
 	default:
-		posted = s.runPhotoPipeline([]content.ContentItem{item})
+		for _, item := range items {
+			if s.runPhotoPipeline([]content.ContentItem{item}) > 0 {
+				posted = 1
+				break
+			}
+		}
 	}
 }
 
