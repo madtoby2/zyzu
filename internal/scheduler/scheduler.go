@@ -453,7 +453,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 
 		// The configured template is authoritative; discard legacy appended source text.
 		caption = formatVideoCaption(s.Cfg.VideoFormat, item, category)
-		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL)
+		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL, s.Cfg.SeparateCover)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
 			s.setChannelJob(category, "retrying", item, downloadedSize)

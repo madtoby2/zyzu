@@ -1,5 +1,5 @@
 import asyncio, json, os, subprocess, sys
-from telethon import TelegramClient
+from telethon import TelegramClient, functions, types, utils
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo
 
 def video_attributes(file_path):
@@ -31,6 +31,41 @@ def video_attributes(file_path):
         pass
     return None
 
+async def send_cover_video_album(client, entity, cover_path, video_path, caption):
+    _, cover_media, _ = await client._file_to_media(
+        cover_path,
+        force_document=False,
+        as_image=True,
+    )
+    if isinstance(cover_media, (types.InputMediaUploadedPhoto, types.InputMediaPhotoExternal)):
+        uploaded = await client(functions.messages.UploadMediaRequest(entity, media=cover_media))
+        cover_media = utils.get_input_media(uploaded.photo)
+
+    _, video_media, _ = await client._file_to_media(
+        video_path,
+        force_document=False,
+        supports_streaming=True,
+        attributes=video_attributes(video_path),
+        thumb=cover_path,
+        nosound_video=True,
+    )
+    if isinstance(video_media, (types.InputMediaUploadedDocument, types.InputMediaDocumentExternal)):
+        uploaded = await client(functions.messages.UploadMediaRequest(entity, media=video_media))
+        video_media = utils.get_input_media(uploaded.document, supports_streaming=True)
+
+    caption_text, caption_entities = await client._parse_message_text(caption or '', 'html')
+    media = [
+        types.InputSingleMedia(
+            cover_media,
+            message=caption_text,
+            entities=caption_entities,
+        ),
+        types.InputSingleMedia(video_media, message='', entities=None),
+    ]
+    result = await client(functions.messages.SendMultiMediaRequest(entity, multi_media=media))
+    messages = client._get_response_message([item.random_id for item in media], result, entity)
+    return messages[0], messages[1]
+
 async def main():
     req = json.loads(sys.stdin.read())
     session = os.environ.get('ZYZU_TELETHON_SESSION', 'telethon')
@@ -58,13 +93,29 @@ async def main():
     # instead of treating a bare -100... ID as an invalid channel object.
     entity = await client.get_input_entity(chat_id) if chat_id is not None else None
     if req.get('action') == 'upload_video':
+        thumb_path = req.get('thumb_path')
+        if req.get('album_cover') and thumb_path and os.path.isfile(thumb_path):
+            cover_msg, video_msg = await send_cover_video_album(
+                client,
+                entity,
+                thumb_path,
+                req['file_path'],
+                req.get('caption', ''),
+            )
+            print(json.dumps({
+                'message_id': video_msg.id,
+                'cover_message_id': cover_msg.id,
+                'album': True,
+                'thumb_submitted': True,
+            }))
+            await client.disconnect()
+            return
         kwargs = {
             'caption': req.get('caption', ''),
             'parse_mode': 'html',
             'supports_streaming': True,
             'force_document': False,
         }
-        thumb_path = req.get('thumb_path')
         if thumb_path and os.path.isfile(thumb_path):
             kwargs['thumb'] = thumb_path
         attributes = video_attributes(req['file_path'])

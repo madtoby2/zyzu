@@ -21,6 +21,7 @@ type Config struct {
 	VideoFormat      string             `json:"video_format"`
 	ContentMode      string             `json:"content_mode"`
 	ContentLimit     int                `json:"content_limit"`
+	SeparateCover    bool               `json:"separate_cover"`
 }
 
 // ChannelIntervalMinutes returns the configured automatic publishing interval.
@@ -44,13 +45,14 @@ func (c *Config) ChannelIntervalMinutes(category string) int {
 
 func Default() *Config {
 	return &Config{
-		ScrapeCron:   "0 0 */6 * * *",
-		ContentCron:  "0 8,20 * * *",
-		ListenAddr:   ":8080",
-		ContentMode:  "video",
-		ContentLimit: 10,
-		PostFormat:   "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`",
-		VideoFormat:  "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}",
+		ScrapeCron:    "0 0 */6 * * *",
+		ContentCron:   "0 8,20 * * *",
+		ListenAddr:    ":8080",
+		ContentMode:   "video",
+		ContentLimit:  10,
+		SeparateCover: true,
+		PostFormat:    "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`",
+		VideoFormat:   "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}",
 	}
 }
 

@@ -125,6 +125,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
       <label>抓取条数<input id="cfg-limit" type="number" value="10"></label>
       <label>视频资源文案<textarea id="cfg-video-format" rows="5" placeholder="[资源码] {code}\n{title}\n分类：{category}\n来源：{source}"></textarea></label>
+      <label style="display:flex;align-items:center;gap:8px"><input id="cfg-separate-cover" type="checkbox" style="width:auto"> 封面与视频合并为同一图集消息</label>
       <small style="display:block;color:#888;margin-top:-6px">视频变量：{channel} 频道文案、{category} 频道分类、{raw_category} 接口原分类、{code}/{id} 资源码、{title}/{name} 标题、{intro} 简介（为空时自动隐藏整行）、{remarks} 备注、{type} 类型、{source} 来源、{source_url} 接口、{cover} 封面附件（不输出文字）、{cover_url} 封面地址、{updated_at} 更新时间。</small>
       <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
@@ -199,7 +200,7 @@ async function loadStations(){
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
-  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-video-format').value=c.video_format||'[资源码] {code}\n{title}\n分类：{category}\n来源：{source}';
+  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-video-format').value=c.video_format||'[资源码] {code}\n{title}\n分类：{category}\n来源：{source}';document.getElementById('cfg-separate-cover').checked=c.separate_cover!==false;
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};channelIntervals=c.channel_intervals||{};refreshChannelCategories();renderChannelCards()}}catch(e){}
  }
 function defaultChannelInterval(category){if(['成人','adult','AV','av'].includes(category))return 15;if(['电视剧','电视','tv'].includes(category))return 30;if(['电影','movie'].includes(category))return 60;return 30}
@@ -282,6 +283,7 @@ async function saveConfig(){
     content_cron:document.getElementById('cfg-content-cron').value,
     content_mode:document.getElementById('cfg-mode').value,
     content_limit:parseInt(document.getElementById('cfg-limit').value)||10
+    ,separate_cover:document.getElementById('cfg-separate-cover').checked
     ,video_format:document.getElementById('cfg-video-format').value
   });
 }
