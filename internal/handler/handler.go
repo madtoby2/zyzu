@@ -111,6 +111,12 @@ func (h *Handler) addChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.cfg.ChannelMap[cat] = append(h.cfg.ChannelMap[cat], body.ID)
+	if h.cfg.ChannelIntervals == nil {
+		h.cfg.ChannelIntervals = map[string]int{}
+	}
+	if h.cfg.ChannelIntervals[cat] <= 0 {
+		h.cfg.ChannelIntervals[cat] = h.cfg.ChannelIntervalMinutes(cat)
+	}
 	if err := h.cfg.Save("config.json"); err != nil {
 		jsonError(w, err.Error(), 500)
 		return
@@ -138,6 +144,7 @@ func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(out) == 0 {
 		delete(h.cfg.ChannelMap, cat)
+		delete(h.cfg.ChannelIntervals, cat)
 	} else {
 		h.cfg.ChannelMap[cat] = out
 	}
@@ -436,16 +443,17 @@ func (h *Handler) triggerContent(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	safe := map[string]interface{}{
-		"scrape_cron":   h.cfg.ScrapeCron,
-		"content_cron":  h.cfg.ContentCron,
-		"content_mode":  h.cfg.ContentMode,
-		"content_limit": h.cfg.ContentLimit,
-		"listen_addr":   h.cfg.ListenAddr,
-		"channel_ids":   h.cfg.ChannelIDs,
-		"channel_map":   h.cfg.ChannelMap,
-		"post_format":   h.cfg.PostFormat,
-		"video_format":  h.cfg.VideoFormat,
-		"bot_token":     maskToken(h.cfg.BotToken),
+		"scrape_cron":       h.cfg.ScrapeCron,
+		"content_cron":      h.cfg.ContentCron,
+		"content_mode":      h.cfg.ContentMode,
+		"content_limit":     h.cfg.ContentLimit,
+		"listen_addr":       h.cfg.ListenAddr,
+		"channel_ids":       h.cfg.ChannelIDs,
+		"channel_map":       h.cfg.ChannelMap,
+		"channel_intervals": h.cfg.ChannelIntervals,
+		"post_format":       h.cfg.PostFormat,
+		"video_format":      h.cfg.VideoFormat,
+		"bot_token":         maskToken(h.cfg.BotToken),
 	}
 	jsonOK(w, safe)
 }
@@ -521,6 +529,17 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 				m[category] = ids
 			}
 			h.cfg.ChannelMap = m
+		}
+	}
+	if v, ok := body["channel_intervals"]; ok {
+		if raw, ok := v.(map[string]interface{}); ok {
+			intervals := make(map[string]int, len(raw))
+			for category, value := range raw {
+				if minutes, ok := value.(float64); ok && minutes > 0 {
+					intervals[category] = int(minutes)
+				}
+			}
+			h.cfg.ChannelIntervals = intervals
 		}
 	}
 	h.cfg.Save("config.json")

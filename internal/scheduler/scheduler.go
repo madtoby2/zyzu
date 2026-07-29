@@ -30,6 +30,8 @@ type Scheduler struct {
 	mu           sync.Mutex
 	running      bool
 	contentRun   bool
+	categoryRuns map[string]bool
+	categoryLast map[string]time.Time
 	lastRun      time.Time
 	lastError    string
 	NewCount     int
@@ -43,12 +45,14 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		workDir = d
 	}
 	return &Scheduler{
-		cron:    cron.New(cron.WithSeconds()),
-		Store:   st,
-		Scraper: scr,
-		Poster:  p,
-		Cfg:     cfg,
-		Video:   video.New(workDir),
+		cron:         cron.New(cron.WithSeconds()),
+		Store:        st,
+		Scraper:      scr,
+		Poster:       p,
+		Cfg:          cfg,
+		Video:        video.New(workDir),
+		categoryRuns: make(map[string]bool),
+		categoryLast: make(map[string]time.Time),
 	}
 }
 
@@ -58,7 +62,7 @@ func (s *Scheduler) Start() error {
 		return fmt.Errorf("add scrape cron: %w", err)
 	}
 	if s.Cfg.ContentCron != "" {
-		_, err := s.cron.AddFunc(s.Cfg.ContentCron, s.runContent)
+		_, err := s.cron.AddFunc(s.Cfg.ContentCron, func() { s.runContent(false) })
 		if err != nil {
 			return fmt.Errorf("add content cron: %w", err)
 		}
@@ -70,15 +74,22 @@ func (s *Scheduler) Start() error {
 
 func (s *Scheduler) Stop()          { s.cron.Stop() }
 func (s *Scheduler) RunNow()        { go s.runScrape() }
-func (s *Scheduler) RunContentNow() { go s.runContent() }
+func (s *Scheduler) RunContentNow() { go s.runContent(true) }
 
 func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	channelRunning := make(map[string]bool, len(s.categoryRuns))
+	anyContentRunning := s.contentRun
+	for category, running := range s.categoryRuns {
+		channelRunning[category] = running
+		anyContentRunning = anyContentRunning || running
+	}
 	return map[string]interface{}{
-		"running":         s.running || s.contentRun,
+		"running":         s.running || anyContentRunning,
 		"scrape_running":  s.running,
-		"content_running": s.contentRun,
+		"content_running": anyContentRunning,
+		"channel_running": channelRunning,
 		"last_run":        s.lastRun,
 		"last_error":      s.lastError,
 		"new_count":       s.NewCount,
@@ -129,11 +140,11 @@ func (s *Scheduler) runScrape() {
 	}
 }
 
-func (s *Scheduler) runContent() {
+func (s *Scheduler) runContent(force bool) {
 	s.mu.Lock()
 	if s.contentRun {
 		s.mu.Unlock()
-		log.Printf("[scheduler] content: skipped because a run is already in progress")
+		log.Printf("[scheduler] content scan: skipped because another scan is in progress")
 		return
 	}
 	s.contentRun = true
@@ -143,6 +154,12 @@ func (s *Scheduler) runContent() {
 		s.contentRun = false
 		s.mu.Unlock()
 	}()
+
+	dueCategories := s.dueContentCategories(force)
+	if len(dueCategories) == 0 {
+		log.Printf("[scheduler] content: no channel is due")
+		return
+	}
 
 	mode := s.Cfg.ContentMode
 	if mode == "" {
@@ -168,10 +185,6 @@ func (s *Scheduler) runContent() {
 		return
 	}
 
-	limit := s.Cfg.ContentLimit
-	if limit <= 0 {
-		limit = 10
-	}
 	// Keep this state in SQLite so a later cron run (or a process restart)
 	// cannot upload the same source item again.
 	filtered := items[:0]
@@ -200,46 +213,93 @@ func (s *Scheduler) runContent() {
 		return s.Video.HasComplete(filtered[i].Title) && !s.Video.HasComplete(filtered[j].Title)
 	})
 
-	// Apply the limit after deduplication and distribute slots across every
-	// configured category. Otherwise the newest high-volume feed can starve
-	// movie and TV channels indefinitely.
-	items = selectRoutableItems(filtered, limit, s.Cfg)
-	if len(items) == 0 {
+	if len(filtered) == 0 {
 		log.Printf("[scheduler] content: no new items")
 		return
 	}
 
-	var posted int
+	claimed := make(map[string]bool)
+	dispatched := 0
+	for _, category := range dueCategories {
+		var selected *content.ContentItem
+		for i := range filtered {
+			item := &filtered[i]
+			if claimed[item.Key] || !stationCategoryMatches(category, item.Category) {
+				continue
+			}
+			selected = item
+			claimed[item.Key] = true
+			break
+		}
+		if selected == nil {
+			log.Printf("[scheduler] channel=%s: no new matching item", category)
+			continue
+		}
+
+		s.mu.Lock()
+		if s.categoryRuns[category] {
+			s.mu.Unlock()
+			continue
+		}
+		s.categoryRuns[category] = true
+		s.categoryLast[category] = time.Now()
+		s.mu.Unlock()
+
+		dispatched++
+		item := *selected
+		go s.runContentCategory(mode, category, item)
+	}
+	if dispatched == 0 {
+		log.Printf("[scheduler] content: no channel job dispatched")
+		return
+	}
+	log.Printf("[scheduler] content: dispatched %d independent channel job(s)", dispatched)
+}
+
+func (s *Scheduler) dueContentCategories(force bool) []string {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	categories := make([]string, 0, len(s.Cfg.ChannelMap))
+	for category, ids := range s.Cfg.ChannelMap {
+		if len(ids) == 0 || s.categoryRuns[category] {
+			continue
+		}
+		interval := time.Duration(s.Cfg.ChannelIntervalMinutes(category)) * time.Minute
+		if force || s.categoryLast[category].IsZero() || now.Sub(s.categoryLast[category]) >= interval {
+			categories = append(categories, category)
+		}
+	}
+	sort.Strings(categories)
+	return categories
+}
+
+func (s *Scheduler) runContentCategory(mode, category string, item content.ContentItem) {
+	posted := 0
+	defer func() {
+		s.Video.Cleanup(30)
+		s.mu.Lock()
+		s.categoryRuns[category] = false
+		s.ContentCount += posted
+		s.mu.Unlock()
+		log.Printf("[scheduler] channel=%s: %d posted (mode=%s)", category, posted, mode)
+	}()
 
 	switch mode {
 	case "digest":
-		title := fmt.Sprintf("📺 今日更新精选 · %s", time.Now().Format("01/02 15:04"))
-		_, err = s.Poster.PostContentDigest(items, title, "default")
-		if err == nil {
-			posted = len(items)
-			for _, item := range items {
-				_ = s.Store.LogContentPost(item.Key)
-			}
+		title := fmt.Sprintf("📺 %s更新精选 · %s", category, time.Now().Format("01/02 15:04"))
+		if _, err := s.Poster.PostContentDigest([]content.ContentItem{item}, title, category); err != nil {
+			log.Printf("[scheduler] channel=%s digest: %v", category, err)
+			return
 		}
-
+		_ = s.Store.LogContentPost(item.Key)
+		posted = 1
 	case "video":
-		posted = s.runVideoPipeline(items)
-
-	default: // "split" or "photo"
-		posted = s.runPhotoPipeline(items)
+		posted = s.runVideoCategory(category, []content.ContentItem{item})
+	default:
+		posted = s.runPhotoPipeline([]content.ContentItem{item})
 	}
-
-	if err != nil {
-		log.Printf("[scheduler] content error: %v", err)
-	}
-
-	// Cleanup old videos, keep last 30
-	s.Video.Cleanup(30)
-
-	s.mu.Lock()
-	s.ContentCount = posted
-	s.mu.Unlock()
-	log.Printf("[scheduler] content: %d posted (mode=%s)", posted, mode)
 }
 
 func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
@@ -315,6 +375,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
+			_ = s.Store.LogContentFailure(content.DedupKey(item))
 			continue
 		}
 		uploadedSize := fileSize(filePath)

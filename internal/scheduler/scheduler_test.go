@@ -1,7 +1,9 @@
 package scheduler
 
 import (
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/madtoby2/zyzu/internal/config"
 	"github.com/madtoby2/zyzu/internal/content"
@@ -94,5 +96,36 @@ func TestFormatVideoCaptionFollowsRouteChannel(t *testing.T) {
 	tv := formatVideoCaption(format, item, "电视剧")
 	if tv != "Madtoby的电视剧\n测试标题\n分类：电视剧\n原分类：default" {
 		t.Fatalf("tv caption = %q", tv)
+	}
+}
+
+func TestDueContentCategoriesUsesIndependentIntervals(t *testing.T) {
+	cfg := &config.Config{
+		ChannelMap: map[string][]int64{
+			"成人":  {1},
+			"电影":  {2},
+			"电视剧": {3},
+		},
+		ChannelIntervals: map[string]int{
+			"成人":  15,
+			"电影":  60,
+			"电视剧": 30,
+		},
+	}
+	s := &Scheduler{
+		Cfg:          cfg,
+		categoryRuns: map[string]bool{},
+		categoryLast: map[string]time.Time{
+			"成人":  time.Now().Add(-16 * time.Minute),
+			"电影":  time.Now().Add(-30 * time.Minute),
+			"电视剧": time.Now().Add(-10 * time.Minute),
+		},
+	}
+
+	if got, want := s.dueContentCategories(false), []string{"成人"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("dueContentCategories() = %#v, want %#v", got, want)
+	}
+	if got, want := s.dueContentCategories(true), []string{"成人", "电影", "电视剧"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("forced dueContentCategories() = %#v, want %#v", got, want)
 	}
 }

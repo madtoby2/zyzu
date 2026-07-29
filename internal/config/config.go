@@ -8,18 +8,38 @@ import (
 )
 
 type Config struct {
-	BotToken     string             `json:"bot_token"`
-	ChannelIDs   []int64            `json:"channel_ids"` // deprecated
-	ChannelID    int64              `json:"channel_id"`  // deprecated
-	ChannelMap   map[string][]int64 `json:"channel_map"` // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
-	APIKey       string             `json:"api_key"`
-	ScrapeCron   string             `json:"scrape_cron"`
-	ContentCron  string             `json:"content_cron"`
-	ListenAddr   string             `json:"listen_addr"`
-	PostFormat   string             `json:"post_format"`
-	VideoFormat  string             `json:"video_format"`
-	ContentMode  string             `json:"content_mode"`
-	ContentLimit int                `json:"content_limit"`
+	BotToken         string             `json:"bot_token"`
+	ChannelIDs       []int64            `json:"channel_ids"`                 // deprecated
+	ChannelID        int64              `json:"channel_id"`                  // deprecated
+	ChannelMap       map[string][]int64 `json:"channel_map"`                 // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
+	ChannelIntervals map[string]int     `json:"channel_intervals,omitempty"` // category -> minutes
+	APIKey           string             `json:"api_key"`
+	ScrapeCron       string             `json:"scrape_cron"`
+	ContentCron      string             `json:"content_cron"`
+	ListenAddr       string             `json:"listen_addr"`
+	PostFormat       string             `json:"post_format"`
+	VideoFormat      string             `json:"video_format"`
+	ContentMode      string             `json:"content_mode"`
+	ContentLimit     int                `json:"content_limit"`
+}
+
+// ChannelIntervalMinutes returns the configured automatic publishing interval.
+// Defaults favor a frequent AV feed while keeping full-length TV and movie
+// uploads from continuously filling the queue.
+func (c *Config) ChannelIntervalMinutes(category string) int {
+	if minutes := c.ChannelIntervals[category]; minutes > 0 {
+		return minutes
+	}
+	switch strings.TrimSpace(strings.ToLower(category)) {
+	case "adult", "成人", "av":
+		return 15
+	case "tv", "电视剧", "电视":
+		return 30
+	case "movie", "电影":
+		return 60
+	default:
+		return 30
+	}
 }
 
 func Default() *Config {

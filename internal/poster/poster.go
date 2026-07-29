@@ -1,6 +1,7 @@
 package poster
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -151,9 +153,20 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumb
 		}
 	}
 	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"thumb_path":%q}`, chatID, filePath, caption, thumbPath)
-	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
+	timeout := 90 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("ZYZU_UPLOAD_TIMEOUT_MINUTES")); raw != "" {
+		if minutes, parseErr := strconv.Atoi(raw); parseErr == nil && minutes >= 10 {
+			timeout = time.Duration(minutes) * time.Minute
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = strings.NewReader(payload)
 	out, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return 0, fmt.Errorf("telethon video upload timed out after %s", timeout)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("telethon video: %s", strings.TrimSpace(string(out)))
 	}
