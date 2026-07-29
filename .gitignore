@@ -6,3 +6,5 @@ data/
 zyzu-cli_linux
 config.json
 *~
+__pycache__/
+*.pyc
