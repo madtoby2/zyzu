@@ -107,24 +107,25 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, 
 	if chatID == 0 {
 		return 0, fmt.Errorf("no channel configured for category %q", category)
 	}
-	thumbPath := ""
-	var thumbErr error
-	if coverURL != "" {
-		thumbPath, thumbErr = prepareCover(coverURL, filePath)
-	}
-	if thumbPath == "" {
-		if thumbErr != nil {
-			log.Printf("[cover] 资源站封面处理失败，改用视频画面: url=%s error=%v", coverURL, thumbErr)
+	coverPath := ""
+	if albumCover && coverURL != "" {
+		var coverErr error
+		coverPath, coverErr = prepareCover(coverURL, filePath)
+		if coverErr != nil {
+			log.Printf("[cover] 资源站封面处理失败，仅发送视频: url=%s error=%v", coverURL, coverErr)
 		}
-		thumbPath, thumbErr = prepareVideoThumbnail(filePath)
 	}
+	thumbPath, thumbErr := prepareVideoThumbnail(filePath)
 	if thumbErr != nil {
-		log.Printf("[cover] 视频缩略图生成失败，继续上传视频: %v", thumbErr)
+		log.Printf("[cover] 视频预览截帧失败，继续上传视频: %v", thumbErr)
+	}
+	if coverPath != "" {
+		defer os.Remove(coverPath)
 	}
 	if thumbPath != "" {
 		defer os.Remove(thumbPath)
 	}
-	return p.sendTelethonVideo(filePath, caption, chatID, thumbPath, albumCover)
+	return p.sendTelethonVideo(filePath, caption, chatID, coverPath, thumbPath, albumCover)
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
@@ -148,7 +149,7 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, 
 	return result.Result.MessageID, nil */
 }
 
-func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumbPath string, albumCover bool) (int, error) {
+func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, coverPath, thumbPath string, albumCover bool) (int, error) {
 	telethonMu.Lock()
 	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
@@ -159,7 +160,7 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, thumb
 			python = "python3"
 		}
 	}
-	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"thumb_path":%q,"album_cover":%t}`, chatID, filePath, caption, thumbPath, albumCover)
+	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"cover_path":%q,"thumb_path":%q,"album_cover":%t}`, chatID, filePath, caption, coverPath, thumbPath, albumCover)
 	timeout := 90 * time.Minute
 	if raw := strings.TrimSpace(os.Getenv("ZYZU_UPLOAD_TIMEOUT_MINUTES")); raw != "" {
 		if minutes, parseErr := strconv.Atoi(raw); parseErr == nil && minutes >= 10 {
@@ -201,7 +202,7 @@ func prepareCover(rawURL, videoPath string) (string, error) {
 	const maxCoverBytes = 10 << 20
 
 	rawPath := videoPath + ".cover"
-	thumbPath := videoPath + ".thumb.jpg"
+	thumbPath := videoPath + ".cover.jpg"
 	defer os.Remove(rawPath)
 	_ = os.Remove(thumbPath)
 
@@ -241,15 +242,33 @@ func prepareCover(rawURL, videoPath string) (string, error) {
 		return "", fmt.Errorf("cover is larger than %d MB", maxCoverBytes>>20)
 	}
 
-	// Telegram custom video thumbnails must be JPEG, no larger than 320x320
-	// and below 200 KB. Resource sites often return WebP/PNG data under a
-	// .jpg URL, so always decode and normalize it with ffmpeg.
-	size, err := renderThumbnail(rawPath, thumbPath, false)
+	// Resource sites often return WebP/PNG data under a .jpg URL. Normalize
+	// it to a regular JPEG while preserving the poster's original aspect ratio.
+	size, err := renderCoverPhoto(rawPath, thumbPath)
 	if err != nil {
 		return "", err
 	}
 	log.Printf("[cover] 资源站封面已就绪: %s (%d KB)", rawURL, (size+1023)/1024)
 	return thumbPath, nil
+}
+
+func renderCoverPhoto(inputPath, coverPath string) (int64, error) {
+	_ = os.Remove(coverPath)
+	cmd := exec.Command(
+		"ffmpeg", "-y", "-loglevel", "error",
+		"-i", inputPath,
+		"-vf", "scale=1280:1280:force_original_aspect_ratio=decrease",
+		"-frames:v", "1", "-q:v", "3",
+		coverPath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return 0, fmt.Errorf("convert cover: %v: %s", err, strings.TrimSpace(string(output)))
+	}
+	info, err := os.Stat(coverPath)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func prepareVideoThumbnail(videoPath string) (string, error) {

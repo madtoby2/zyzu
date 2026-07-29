@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/madtoby2/zyzu/internal/config"
 	"github.com/madtoby2/zyzu/internal/content"
@@ -632,6 +633,15 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{category}", escapeHTML(categoryLabel),
 		"{raw_category}", escapeHTML(item.Category),
 		"{type}", escapeHTML(item.TypeName),
+		"{class}", escapeHTML(item.Class),
+		"{tags}", escapeHTML(contentTags(item, routeCategory)),
+		"{actor}", escapeHTML(item.Actor),
+		"{director}", escapeHTML(item.Director),
+		"{area}", escapeHTML(item.Area),
+		"{language}", escapeHTML(item.Language),
+		"{year}", escapeHTML(item.Year),
+		"{score}", escapeHTML(item.Score),
+		"{duration}", escapeHTML(item.Duration),
 		"{remarks}", escapeHTML(item.Remarks),
 		"{source}", escapeHTML(item.Source),
 		"{source_url}", escapeHTML(item.SourceURL),
@@ -640,6 +650,33 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{cover_url}", escapeHTML(item.CoverURL),
 		"{updated_at}", escapeHTML(item.VodTime),
 	).Replace(format)
+}
+
+func contentTags(item content.ContentItem, routeCategory string) string {
+	_, categoryLabel := videoCaptionLabels(routeCategory)
+	raw := []string{categoryLabel, item.TypeName, item.Class, item.Area, item.Year}
+	seen := make(map[string]bool)
+	tags := make([]string, 0, len(raw))
+	for _, group := range raw {
+		for _, value := range strings.FieldsFunc(group, func(r rune) bool {
+			return r == ',' || r == '，' || r == '/' || r == '、' || r == '|' || r == ' '
+		}) {
+			var normalized strings.Builder
+			for _, r := range strings.TrimSpace(value) {
+				if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' {
+					normalized.WriteRune(r)
+				}
+			}
+			tag := normalized.String()
+			key := strings.ToLower(tag)
+			if tag == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			tags = append(tags, "#"+tag)
+		}
+	}
+	return strings.Join(tags, " ")
 }
 
 func videoCaptionLabels(category string) (channelLabel, categoryLabel string) {

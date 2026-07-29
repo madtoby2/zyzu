@@ -31,7 +31,7 @@ def video_attributes(file_path):
         pass
     return None
 
-async def send_cover_video_album(client, entity, cover_path, video_path, caption):
+async def send_cover_video_album(client, entity, cover_path, thumb_path, video_path, caption):
     _, cover_media, _ = await client._file_to_media(
         cover_path,
         force_document=False,
@@ -46,7 +46,7 @@ async def send_cover_video_album(client, entity, cover_path, video_path, caption
         force_document=False,
         supports_streaming=True,
         attributes=video_attributes(video_path),
-        thumb=cover_path,
+        thumb=thumb_path,
         nosound_video=True,
     )
     if isinstance(video_media, (types.InputMediaUploadedDocument, types.InputMediaDocumentExternal)):
@@ -93,12 +93,14 @@ async def main():
     # instead of treating a bare -100... ID as an invalid channel object.
     entity = await client.get_input_entity(chat_id) if chat_id is not None else None
     if req.get('action') == 'upload_video':
+        cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')
-        if req.get('album_cover') and thumb_path and os.path.isfile(thumb_path):
+        if req.get('album_cover') and cover_path and os.path.isfile(cover_path):
             cover_msg, video_msg = await send_cover_video_album(
                 client,
                 entity,
-                thumb_path,
+                cover_path,
+                thumb_path if thumb_path and os.path.isfile(thumb_path) else None,
                 req['file_path'],
                 req.get('caption', ''),
             )

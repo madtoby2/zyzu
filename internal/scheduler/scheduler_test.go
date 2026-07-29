@@ -167,3 +167,20 @@ func TestFormatVideoCaptionHidesEmptyIntroAndCoverURL(t *testing.T) {
 		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
 	}
 }
+
+func TestFormatVideoCaptionIncludesMetadataTags(t *testing.T) {
+	item := content.ContentItem{
+		Title:    "测试影片",
+		TypeName: "国产动漫",
+		Class:    "热血 / 冒险",
+		Area:     "中国大陆",
+		Year:     "2026",
+		Actor:    "演员甲",
+		Duration: "26:19",
+	}
+	format := "{title}\n标签：{tags}\n演员：{actor}\n时长：{duration}"
+	want := "测试影片\n标签：#动漫 #国产动漫 #热血 #冒险 #中国大陆 #2026\n演员：演员甲\n时长：26:19"
+	if got := formatVideoCaption(format, item, "动漫"); got != want {
+		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
+	}
+}

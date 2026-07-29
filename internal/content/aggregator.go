@@ -18,14 +18,22 @@ import (
 
 // APIItem represents a video item from CMS JSON API.
 type APIItem struct {
-	VodID      int    `json:"vod_id"`
-	VodName    string `json:"vod_name"`
-	TypeName   string `json:"type_name"`
-	VodTime    string `json:"vod_time"`
-	VodRemarks string `json:"vod_remarks"`
-	VodContent string `json:"vod_content"`
-	VodPic     string `json:"vod_pic"`
-	VodPlayURL string `json:"vod_play_url"`
+	VodID       int    `json:"vod_id"`
+	VodName     string `json:"vod_name"`
+	TypeName    string `json:"type_name"`
+	VodClass    string `json:"vod_class"`
+	VodActor    string `json:"vod_actor"`
+	VodDirector string `json:"vod_director"`
+	VodArea     string `json:"vod_area"`
+	VodLang     string `json:"vod_lang"`
+	VodYear     any    `json:"vod_year"`
+	VodScore    any    `json:"vod_score"`
+	VodDuration any    `json:"vod_duration"`
+	VodTime     string `json:"vod_time"`
+	VodRemarks  string `json:"vod_remarks"`
+	VodContent  string `json:"vod_content"`
+	VodPic      string `json:"vod_pic"`
+	VodPlayURL  string `json:"vod_play_url"`
 }
 
 // APIListResp is the list endpoint response.
@@ -49,6 +57,14 @@ type ContentItem struct {
 	Key       string   `json:"-"`
 	Title     string   `json:"title"`
 	TypeName  string   `json:"type_name"`
+	Class     string   `json:"class"`
+	Actor     string   `json:"actor"`
+	Director  string   `json:"director"`
+	Area      string   `json:"area"`
+	Language  string   `json:"language"`
+	Year      string   `json:"year"`
+	Score     string   `json:"score"`
+	Duration  string   `json:"duration"`
 	Remarks   string   `json:"remarks"`
 	Category  string   `json:"category"`
 	Episodes  []string `json:"episodes"`
@@ -118,6 +134,14 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					Key:       key,
 					Title:     normalizeTitle(item.VodName),
 					TypeName:  item.TypeName,
+					Class:     item.VodClass,
+					Actor:     item.VodActor,
+					Director:  item.VodDirector,
+					Area:      item.VodArea,
+					Language:  item.VodLang,
+					Year:      scalarString(item.VodYear),
+					Score:     scalarString(item.VodScore),
+					Duration:  scalarString(item.VodDuration),
 					Remarks:   item.VodRemarks,
 					Category:  Classify(item.TypeName+" "+item.VodName+" "+item.VodRemarks, nil),
 					CoverURL:  normalizeMediaURL(src.APIURL, item.VodPic),
@@ -141,6 +165,30 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					if detail[0].VodRemarks != "" {
 						ci.Remarks = detail[0].VodRemarks
 					}
+					if detail[0].VodClass != "" {
+						ci.Class = detail[0].VodClass
+					}
+					if detail[0].VodActor != "" {
+						ci.Actor = detail[0].VodActor
+					}
+					if detail[0].VodDirector != "" {
+						ci.Director = detail[0].VodDirector
+					}
+					if detail[0].VodArea != "" {
+						ci.Area = detail[0].VodArea
+					}
+					if detail[0].VodLang != "" {
+						ci.Language = detail[0].VodLang
+					}
+					if value := scalarString(detail[0].VodYear); value != "" {
+						ci.Year = value
+					}
+					if value := scalarString(detail[0].VodScore); value != "" {
+						ci.Score = value
+					}
+					if value := scalarString(detail[0].VodDuration); value != "" {
+						ci.Duration = value
+					}
 				}
 
 				all = append(all, ci)
@@ -154,6 +202,21 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+func scalarString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.6f", typed), "0"), ".")
+	case json.Number:
+		return typed.String()
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
 }
 
 func normalizeMediaURL(baseURL, rawURL string) string {

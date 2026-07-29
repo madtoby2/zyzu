@@ -38,3 +38,17 @@ func TestNormalizeMediaURL(t *testing.T) {
 		}
 	}
 }
+
+func TestScalarStringAcceptsCMSNumbersAndStrings(t *testing.T) {
+	tests := map[any]string{
+		nil:      "",
+		" 2026 ": "2026",
+		8.0:      "8",
+		8.25:     "8.25",
+	}
+	for input, want := range tests {
+		if got := scalarString(input); got != want {
+			t.Errorf("scalarString(%v) = %q, want %q", input, got, want)
+		}
+	}
+}
