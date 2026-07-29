@@ -25,3 +25,16 @@ func TestCleanIntroRemovesCMSHTML(t *testing.T) {
 		t.Fatalf("cleanIntro() = %q, want %q", got, want)
 	}
 }
+
+func TestNormalizeMediaURL(t *testing.T) {
+	tests := map[string]string{
+		"https://img.test/poster.jpg": "https://img.test/poster.jpg",
+		"//cdn.test/poster.jpg":       "https://cdn.test/poster.jpg",
+		"/covers/poster.jpg":          "https://api.test/covers/poster.jpg",
+	}
+	for raw, want := range tests {
+		if got := normalizeMediaURL("https://api.test/api.php/provide/vod/", raw); got != want {
+			t.Errorf("normalizeMediaURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

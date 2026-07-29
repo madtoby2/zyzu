@@ -120,7 +120,7 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					TypeName:  item.TypeName,
 					Remarks:   item.VodRemarks,
 					Category:  Classify(item.TypeName+" "+item.VodName+" "+item.VodRemarks, nil),
-					CoverURL:  item.VodPic,
+					CoverURL:  normalizeMediaURL(src.APIURL, item.VodPic),
 					Source:    src.Name,
 					SourceURL: src.APIURL,
 					VodID:     item.VodID,
@@ -132,6 +132,9 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 				detail, err := a.fetchDetail(src, item.VodID)
 				if err == nil && len(detail) > 0 {
 					ci.Episodes = parseEpisodes(detail[0].VodPlayURL)
+					if coverURL := normalizeMediaURL(src.APIURL, detail[0].VodPic); coverURL != "" {
+						ci.CoverURL = coverURL
+					}
 					if intro := cleanIntro(detail[0].VodContent, item.VodName, item.VodID); intro != "" {
 						ci.Intro = intro
 					}
@@ -151,6 +154,32 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+func normalizeMediaURL(baseURL, rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	if strings.HasPrefix(rawURL, "//") {
+		base, err := url.Parse(baseURL)
+		if err == nil && base.Scheme != "" {
+			return base.Scheme + ":" + rawURL
+		}
+		return "https:" + rawURL
+	}
+	ref, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if ref.IsAbs() {
+		return ref.String()
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return rawURL
+	}
+	return base.ResolveReference(ref).String()
 }
 
 // normalizeTitle removes the common API corruption where the exact same title
