@@ -1,5 +1,35 @@
-import asyncio, json, os, sys
+import asyncio, json, os, subprocess, sys
 from telethon import TelegramClient
+from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo
+
+def video_attributes(file_path):
+    try:
+        result = subprocess.run([
+            'ffprobe', '-v', 'error', '-of', 'json',
+            '-show_entries', 'stream=width,height,duration:stream_tags=rotate:format=duration',
+            '-select_streams', 'v:0', file_path,
+        ], capture_output=True, text=True, timeout=20, check=True)
+        metadata = json.loads(result.stdout)
+        stream = (metadata.get('streams') or [{}])[0]
+        width = int(stream.get('width') or 0)
+        height = int(stream.get('height') or 0)
+        rotation = int((stream.get('tags') or {}).get('rotate') or 0) % 360
+        if rotation in (90, 270):
+            width, height = height, width
+        duration = float(stream.get('duration') or (metadata.get('format') or {}).get('duration') or 0)
+        if width > 0 and height > 0:
+            return [
+                DocumentAttributeVideo(
+                    duration=max(0, round(duration)),
+                    w=width,
+                    h=height,
+                    supports_streaming=True,
+                ),
+                DocumentAttributeFilename(os.path.basename(file_path)),
+            ]
+    except Exception:
+        pass
+    return None
 
 async def main():
     req = json.loads(sys.stdin.read())
@@ -37,6 +67,9 @@ async def main():
         thumb_path = req.get('thumb_path')
         if thumb_path and os.path.isfile(thumb_path):
             kwargs['thumb'] = thumb_path
+        attributes = video_attributes(req['file_path'])
+        if attributes:
+            kwargs['attributes'] = attributes
         msg = await client.send_file(entity, req['file_path'], **kwargs)
         print(json.dumps({'message_id': msg.id, 'thumb_submitted': bool(kwargs.get('thumb'))})); await client.disconnect(); return
     msg = await client.send_message(entity, req['text'])

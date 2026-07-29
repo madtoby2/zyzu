@@ -271,7 +271,7 @@ func renderThumbnail(inputPath, thumbPath string, seekVideo bool) (int64, error)
 		}
 		args = append(args,
 			"-i", inputPath,
-			"-vf", "scale=320:320:force_original_aspect_ratio=decrease",
+			"-vf", "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2:black",
 			"-frames:v", "1", "-q:v", quality,
 			thumbPath,
 		)
