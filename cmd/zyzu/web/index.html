@@ -143,7 +143,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 <div id="toast-area"></div>
 
 <script>
-let server='',key='',stations=[],ws,channelMap={},channelIntervals={},logEntries=[],stationPage=1;
+let server='',key='',stations=[],ws,channelMap={},channelIntervals={},channelJobs={},logEntries=[],stationPage=1;
 const stationPageSize=10;
 const LS='zyzu_profiles', LOG_PREFIX='zyzu_logs:';
 
@@ -155,6 +155,7 @@ function init(){
   }
   const last=JSON.parse(localStorage.getItem('zyzu_last')||'null');
   if(last){document.getElementById('login-server').value=last.server||'';document.getElementById('login-key').value=last.key||'';}
+  setInterval(()=>{if(server&&document.getElementById('app').style.display!=='none')loadStats()},3000);
 }
 async function doLogin(){
   const s=document.getElementById('login-server').value.trim();
@@ -191,7 +192,7 @@ function showErr(m){const e=document.getElementById('login-err');e.textContent=m
 async function loadStats(){
   if(!server)return;
   try{const r=await fetch(server+'/api/stations/stats').then(r=>r.json());if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted}
-  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok){const state=s.data.content_running?'下载/上传中':s.data.scrape_running?'采集中':'空闲';document.getElementById('s-running').textContent=state}}catch(e){}
+  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok){const state=s.data.content_running?'下载/上传中':s.data.scrape_running?'采集中':'空闲';document.getElementById('s-running').textContent=state;channelJobs=s.data.channel_jobs||{};renderChannelCards();const modal=document.getElementById('channel-detail-modal'),current=document.getElementById('channel-current-job');if(current&&!modal.classList.contains('hidden'))current.textContent=channelJobText(modal.dataset.category)}}catch(e){}
 }
 async function loadStations(){
   try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories();refreshStationCategoryFilter()}catch(e){}
@@ -202,9 +203,10 @@ async function loadConfig(){
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};channelIntervals=c.channel_intervals||{};refreshChannelCategories();renderChannelCards()}}catch(e){}
  }
 function defaultChannelInterval(category){if(['成人','adult','AV','av'].includes(category))return 15;if(['电视剧','电视','tv'].includes(category))return 30;if(['电影','movie'].includes(category))return 60;return 30}
+function channelJobText(category){const j=channelJobs[category];if(!j)return '等待调度';const labels={queued:'等待处理',downloading:'正在下载',uploading:'正在上传',retrying:'正在换源',completed:'最近完成',failed:'本轮失败'};const size=j.size_mb?` · ${Number(j.size_mb).toFixed(0)}MB`:'';return `${labels[j.state]||j.state}《${j.title||'未知资源'}》 · ${j.source||'未知来源'}${size}`}
 function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
 function refreshStationCategoryFilter(){const el=document.getElementById('station-category-filter');if(!el)return;const current=el.value;const values=stations.map(s=>s.category||'未分类').filter(Boolean);const unique=[...new Set(values)];el.innerHTML='<option value="">全部分类</option>'+unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
-function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><small style="display:block;color:#aaa;margin-top:8px">每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查 · 点击设置</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
+function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><div style="margin-top:10px;color:#f2d8ff;line-height:1.5">${esc(channelJobText(cat))}</div><small style="display:block;color:#aaa;margin-top:8px">每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查 · 点击设置</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
 async function openChannelDetail(category,id){
   category=decodeURIComponent(category);id=decodeURIComponent(id);
   const modal=document.getElementById('channel-detail-modal'), body=document.getElementById('channel-detail-body');
@@ -212,7 +214,7 @@ async function openChannelDetail(category,id){
   document.getElementById('channel-detail-title').textContent=category+' · 频道详情';
   const bound=stations.filter(s=>(s.category||'综合影视')===category);
   const interval=channelIntervals[category]||defaultChannelInterval(category);
-  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>频道分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>推送方式</small><b>Telethon</b></div></div><div class="detail-section"><h4>自动发布频率</h4><div class="config-form"><label>检查间隔<select id="channel-interval"><option value="15">每 15 分钟</option><option value="30">每 30 分钟</option><option value="60">每 1 小时</option><option value="120">每 2 小时</option><option value="360">每 6 小时</option></select></label><button class="btn btn-p" onclick="saveChannelInterval()">保存频率</button></div><small style="color:#999">完整视频需先下载；实际发布时间取决于文件大小和 Telegram 上传速度。</small></div><div class="detail-section"><h4>绑定资源站（按此分类自动推送）</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
+  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>频道分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>推送方式</small><b>Telethon</b></div></div><div class="detail-section"><h4>当前任务</h4><div class="detail-row" id="channel-current-job">${esc(channelJobText(category))}</div></div><div class="detail-section"><h4>自动发布频率</h4><div class="config-form"><label>检查间隔<select id="channel-interval"><option value="15">每 15 分钟</option><option value="30">每 30 分钟</option><option value="60">每 1 小时</option><option value="120">每 2 小时</option><option value="360">每 6 小时</option></select></label><button class="btn btn-p" onclick="saveChannelInterval()">保存频率</button></div><small style="color:#999">完整视频需先下载；实际发布时间取决于文件大小和 Telegram 上传速度。</small></div><div class="detail-section"><h4>绑定资源站（按此分类自动推送）</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
   document.getElementById('channel-interval').value=String(interval);
   modal.classList.remove('hidden');
   try{const r=await fetch(server+'/api/history?limit=10').then(r=>r.json());const logs=r.ok&&Array.isArray(r.data)?r.data:[];const names=new Map(stations.map(s=>[s.id,s.name]));const el=document.getElementById('channel-history');el.innerHTML=logs.length?logs.map(x=>`<div class="detail-row"><b>${esc(names.get(x.station_id)||'资源站')}</b> · ${esc(new Date(x.posted_at).toLocaleString())}<div style="white-space:pre-wrap;margin-top:6px;color:#eee">${esc(x.content||'暂无推送文字')}</div></div>`).join(''):'<div class="empty-detail">暂无推送记录</div>'}catch(e){const el=document.getElementById('channel-history');if(el)el.innerHTML='<div class="empty-detail">推送记录暂时不可用</div>'}

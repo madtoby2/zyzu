@@ -17,3 +17,11 @@ func TestParseEpisodesSplitsPlayerGroups(t *testing.T) {
 		t.Fatalf("parseEpisodes() = %#v, want %#v", got, want)
 	}
 }
+
+func TestCleanIntroRemovesCMSHTML(t *testing.T) {
+	raw := `<p>皇家马德里&nbsp;的传奇征战历程</p><div>第二段<br>继续</div>`
+	want := "皇家马德里 的传奇征战历程 第二段 继续"
+	if got := cleanIntro(raw, "标题", 1); got != want {
+		t.Fatalf("cleanIntro() = %q, want %q", got, want)
+	}
+}

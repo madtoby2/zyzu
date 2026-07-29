@@ -32,11 +32,20 @@ type Scheduler struct {
 	contentRun   bool
 	categoryRuns map[string]bool
 	categoryLast map[string]time.Time
+	channelJobs  map[string]ChannelJobStatus
 	lastRun      time.Time
 	lastError    string
 	NewCount     int
 	UpdCount     int
 	ContentCount int
+}
+
+type ChannelJobStatus struct {
+	State     string    `json:"state"`
+	Title     string    `json:"title"`
+	Source    string    `json:"source"`
+	SizeMB    float64   `json:"size_mb,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Config) *Scheduler {
@@ -53,6 +62,7 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		Video:        video.New(workDir),
 		categoryRuns: make(map[string]bool),
 		categoryLast: make(map[string]time.Time),
+		channelJobs:  make(map[string]ChannelJobStatus),
 	}
 }
 
@@ -80,16 +90,21 @@ func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	channelRunning := make(map[string]bool, len(s.categoryRuns))
+	channelJobs := make(map[string]ChannelJobStatus, len(s.channelJobs))
 	anyContentRunning := s.contentRun
 	for category, running := range s.categoryRuns {
 		channelRunning[category] = running
 		anyContentRunning = anyContentRunning || running
+	}
+	for category, job := range s.channelJobs {
+		channelJobs[category] = job
 	}
 	return map[string]interface{}{
 		"running":         s.running || anyContentRunning,
 		"scrape_running":  s.running,
 		"content_running": anyContentRunning,
 		"channel_running": channelRunning,
+		"channel_jobs":    channelJobs,
 		"last_run":        s.lastRun,
 		"last_error":      s.lastError,
 		"new_count":       s.NewCount,
@@ -234,6 +249,12 @@ func (s *Scheduler) runContent(force bool) {
 		}
 		s.categoryRuns[category] = true
 		s.categoryLast[category] = time.Now()
+		s.channelJobs[category] = ChannelJobStatus{
+			State:     "queued",
+			Title:     candidates[0].Title,
+			Source:    candidates[0].Source,
+			UpdatedAt: time.Now(),
+		}
 		s.mu.Unlock()
 
 		dispatched++
@@ -309,6 +330,12 @@ func (s *Scheduler) runContentCategory(mode, category string, items []content.Co
 		s.mu.Lock()
 		s.categoryRuns[category] = false
 		s.ContentCount += posted
+		if posted == 0 {
+			job := s.channelJobs[category]
+			job.State = "failed"
+			job.UpdatedAt = time.Now()
+			s.channelJobs[category] = job
+		}
 		s.mu.Unlock()
 		log.Printf("[scheduler] channel=%s: %d posted (mode=%s)", category, posted, mode)
 	}()
@@ -337,6 +364,18 @@ func (s *Scheduler) runContentCategory(mode, category string, items []content.Co
 				break
 			}
 		}
+	}
+}
+
+func (s *Scheduler) setChannelJob(category, state string, item content.ContentItem, sizeBytes int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.channelJobs[category] = ChannelJobStatus{
+		State:     state,
+		Title:     item.Title,
+		Source:    item.Source,
+		SizeMB:    float64(sizeBytes) / 1024 / 1024,
+		UpdatedAt: time.Now(),
 	}
 }
 
@@ -382,6 +421,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		if len(item.Episodes) == 0 {
 			continue
 		}
+		s.setChannelJob(category, "downloading", item, 0)
 		log.Printf("[video] processing category=%s source=%s title=%s", category, item.Source, item.Title)
 
 		var filePath string
@@ -398,10 +438,13 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			log.Printf("[video] download %s (%s): %v", item.Title, parts[0], err)
 		}
 		if err != nil || filePath == "" {
+			s.setChannelJob(category, "retrying", item, 0)
 			_ = s.Store.LogContentFailure(content.DedupKey(item))
 			continue
 		}
 
+		downloadedSize := fileSize(filePath)
+		s.setChannelJob(category, "uploading", item, downloadedSize)
 		caption := formatVideoCaption(s.Cfg.VideoFormat, item, category)
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
@@ -413,6 +456,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
+			s.setChannelJob(category, "retrying", item, downloadedSize)
 			_ = s.Store.LogContentFailure(content.DedupKey(item))
 			continue
 		}
@@ -427,6 +471,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
 			log.Printf("[content] record %s: %v", item.Title, err)
 		}
+		s.setChannelJob(category, "completed", item, uploadedSize)
 		log.Printf("[video] posted: %s (category=%s, %.0fMB)", item.Title, category, float64(uploadedSize)/1024/1024)
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
@@ -654,6 +699,6 @@ func fileSize(path string) int64 {
 }
 
 func escapeHTML(s string) string {
-	r := strings.NewReplacer("<", "&lt;", ">", "&gt;", "&", "&amp;")
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	return r.Replace(s)
 }

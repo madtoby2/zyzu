@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -180,12 +182,20 @@ func itemKey(sourceURL string, item APIItem) string {
 }
 
 func cleanIntro(intro, title string, id int) string {
-	intro = strings.TrimSpace(intro)
+	intro = html.UnescapeString(intro)
+	intro = introBreakTags.ReplaceAllString(intro, "\n")
+	intro = introTags.ReplaceAllString(intro, "")
+	intro = strings.Join(strings.Fields(intro), " ")
 	if intro == "" || intro == title || (id > 0 && intro == fmt.Sprintf("%d", id)) {
 		return ""
 	}
 	return intro
 }
+
+var (
+	introBreakTags = regexp.MustCompile(`(?i)</?(?:p|div|br|li|h[1-6])\b[^>]*>`)
+	introTags      = regexp.MustCompile(`(?s)<[^>]*>`)
+)
 
 func (a *Aggregator) fetchList(src store.Station, page int) ([]APIItem, error) {
 	u := buildURL(src.APIURL, map[string]string{

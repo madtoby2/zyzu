@@ -461,5 +461,5 @@ func escapeMD(s string) string {
 }
 
 func escapeHTML(s string) string {
-	return strings.NewReplacer("<", "&lt;", ">", "&gt;", "&", "&amp;").Replace(s)
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }

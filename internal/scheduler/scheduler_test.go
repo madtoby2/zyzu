@@ -146,3 +146,11 @@ func TestSelectCategoryCandidatesPrefersDifferentSources(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapeHTMLDoesNotDoubleEscapeEntities(t *testing.T) {
+	const input = "<p>A & B</p>"
+	const want = "&lt;p&gt;A &amp; B&lt;/p&gt;"
+	if got := escapeHTML(input); got != want {
+		t.Fatalf("escapeHTML() = %q, want %q", got, want)
+	}
+}
