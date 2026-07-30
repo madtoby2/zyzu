@@ -29,8 +29,10 @@ type Scheduler struct {
 	Video   *video.Downloader
 
 	mu           sync.Mutex
+	scheduledMu  sync.Mutex
 	running      bool
 	contentRun   bool
+	scheduledRun bool
 	categoryRuns map[string]bool
 	categoryLast map[string]time.Time
 	channelJobs  map[string]ChannelJobStatus
@@ -78,6 +80,9 @@ func (s *Scheduler) Start() error {
 			return fmt.Errorf("add content cron: %w", err)
 		}
 	}
+	if _, err := s.cron.AddFunc("0 * * * * *", s.runScheduledMessages); err != nil {
+		return fmt.Errorf("add scheduled messages cron: %w", err)
+	}
 	s.cron.Start()
 	log.Printf("[scheduler] scrape=%s content=%s mode=%s", s.Cfg.ScrapeCron, s.Cfg.ContentCron, s.Cfg.ContentMode)
 	return nil
@@ -86,6 +91,25 @@ func (s *Scheduler) Start() error {
 func (s *Scheduler) Stop()          { s.cron.Stop() }
 func (s *Scheduler) RunNow()        { go s.runScrape() }
 func (s *Scheduler) RunContentNow() { go s.runContent(true) }
+
+func (s *Scheduler) SendScheduledMessageNow(id int64) error {
+	s.scheduledMu.Lock()
+	defer s.scheduledMu.Unlock()
+	message, err := s.Store.GetScheduledMessage(id)
+	if err != nil {
+		return err
+	}
+	messageID, sendErr := s.Poster.PostToChannel(message.Content, message.ChannelID)
+	if sendErr != nil {
+		_ = s.Store.MarkScheduledMessageResult(message.ID, false, message.NextRunAt, "failed", sendErr.Error())
+		_ = s.Store.LogEvent("err", fmt.Sprintf("定时发言“%s”手动发送失败：%v", message.ChannelCategory, sendErr))
+		return sendErr
+	}
+	_ = s.Store.MarkScheduledMessageResult(message.ID, true, message.NextRunAt, "manual_sent", "")
+	_ = s.Store.LogEvent("ok", fmt.Sprintf("定时发言已发送到“%s”，消息 #%d", message.ChannelCategory, messageID))
+	log.Printf("[scheduled] manual message=%d channel=%s telegram_message=%d", message.ID, message.ChannelCategory, messageID)
+	return nil
+}
 
 func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()
@@ -114,6 +138,49 @@ func (s *Scheduler) Status() map[string]interface{} {
 		"cron_scrape":     s.Cfg.ScrapeCron,
 		"cron_content":    s.Cfg.ContentCron,
 		"content_mode":    s.Cfg.ContentMode,
+	}
+}
+
+func (s *Scheduler) runScheduledMessages() {
+	s.mu.Lock()
+	if s.scheduledRun {
+		s.mu.Unlock()
+		return
+	}
+	s.scheduledRun = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.scheduledRun = false
+		s.mu.Unlock()
+	}()
+
+	now := time.Now().UTC()
+	messages, err := s.Store.GetDueScheduledMessages(now)
+	if err != nil {
+		log.Printf("[scheduled] list due messages: %v", err)
+		return
+	}
+	for _, message := range messages {
+		nextRun := store.NextScheduledRun(message.ScheduleType, message.IntervalMinutes, message.DailyTime, now)
+		s.scheduledMu.Lock()
+		if err := s.Store.MarkScheduledMessageSending(message.ID, nextRun); err != nil {
+			s.scheduledMu.Unlock()
+			log.Printf("[scheduled] claim message=%d: %v", message.ID, err)
+			continue
+		}
+		messageID, sendErr := s.Poster.PostToChannel(message.Content, message.ChannelID)
+		if sendErr != nil {
+			_ = s.Store.MarkScheduledMessageResult(message.ID, false, nextRun, "failed", sendErr.Error())
+			s.scheduledMu.Unlock()
+			_ = s.Store.LogEvent("err", fmt.Sprintf("定时发言“%s”发送失败：%v", message.ChannelCategory, sendErr))
+			log.Printf("[scheduled] message=%d channel=%s: %v", message.ID, message.ChannelCategory, sendErr)
+			continue
+		}
+		_ = s.Store.MarkScheduledMessageResult(message.ID, true, nextRun, "sent", "")
+		s.scheduledMu.Unlock()
+		_ = s.Store.LogEvent("ok", fmt.Sprintf("定时发言已发送到“%s”，消息 #%d", message.ChannelCategory, messageID))
+		log.Printf("[scheduled] message=%d channel=%s telegram_message=%d next=%s", message.ID, message.ChannelCategory, messageID, nextRun.Format(time.RFC3339))
 	}
 }
 

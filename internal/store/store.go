@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,23 @@ type EventLog struct {
 	Level     string    `json:"level"`
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type ScheduledMessage struct {
+	ID              int64      `json:"id"`
+	ChannelCategory string     `json:"channel_category"`
+	ChannelID       int64      `json:"channel_id"`
+	Content         string     `json:"content"`
+	ScheduleType    string     `json:"schedule_type"`
+	IntervalMinutes int        `json:"interval_minutes"`
+	DailyTime       string     `json:"daily_time"`
+	Enabled         bool       `json:"enabled"`
+	LastSentAt      *time.Time `json:"last_sent_at,omitempty"`
+	NextRunAt       time.Time  `json:"next_run_at"`
+	LastStatus      string     `json:"last_status"`
+	LastError       string     `json:"last_error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type Store struct {
@@ -111,6 +129,24 @@ func (s *Store) migrate() error {
 		fail_count INTEGER DEFAULT 1
 	);
 	CREATE INDEX IF NOT EXISTS idx_content_failures_failed_at ON content_failures(failed_at);
+	CREATE TABLE IF NOT EXISTS scheduled_messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		channel_category TEXT NOT NULL,
+		channel_id INTEGER NOT NULL,
+		content TEXT NOT NULL,
+		schedule_type TEXT NOT NULL DEFAULT 'interval',
+		interval_minutes INTEGER NOT NULL DEFAULT 60,
+		daily_time TEXT NOT NULL DEFAULT '',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		last_sent_at DATETIME,
+		next_run_at DATETIME NOT NULL,
+		last_status TEXT NOT NULL DEFAULT 'waiting',
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_scheduled_messages_due
+		ON scheduled_messages(enabled, next_run_at);
 	`
 	_, err := s.db.Exec(ddl)
 	if err != nil {
@@ -119,6 +155,187 @@ func (s *Store) migrate() error {
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
 	return err
+}
+
+func NextScheduledRun(scheduleType string, intervalMinutes int, dailyTime string, after time.Time) time.Time {
+	if scheduleType == "daily" {
+		parts := strings.Split(dailyTime, ":")
+		if len(parts) == 2 {
+			hour, hourErr := strconv.Atoi(parts[0])
+			minute, minuteErr := strconv.Atoi(parts[1])
+			if hourErr == nil && minuteErr == nil && hour >= 0 && hour < 24 && minute >= 0 && minute < 60 {
+				location, err := time.LoadLocation("Asia/Shanghai")
+				if err != nil {
+					location = time.FixedZone("Asia/Shanghai", 8*60*60)
+				}
+				localAfter := after.In(location)
+				next := time.Date(localAfter.Year(), localAfter.Month(), localAfter.Day(), hour, minute, 0, 0, location)
+				if !next.After(localAfter) {
+					next = next.AddDate(0, 0, 1)
+				}
+				return next.UTC()
+			}
+		}
+	}
+	if intervalMinutes < 1 {
+		intervalMinutes = 60
+	}
+	return after.Add(time.Duration(intervalMinutes) * time.Minute).UTC()
+}
+
+func (s *Store) CreateScheduledMessage(message *ScheduledMessage) error {
+	now := time.Now().UTC()
+	message.NextRunAt = NextScheduledRun(message.ScheduleType, message.IntervalMinutes, message.DailyTime, now)
+	result, err := s.db.Exec(`INSERT INTO scheduled_messages
+		(channel_category, channel_id, content, schedule_type, interval_minutes,
+		 daily_time, enabled, next_run_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		message.ChannelCategory, message.ChannelID, message.Content, message.ScheduleType,
+		message.IntervalMinutes, message.DailyTime, message.Enabled, message.NextRunAt, now, now)
+	if err != nil {
+		return err
+	}
+	message.ID, _ = result.LastInsertId()
+	message.CreatedAt = now
+	message.UpdatedAt = now
+	message.LastStatus = "waiting"
+	return nil
+}
+
+func (s *Store) UpdateScheduledMessage(message *ScheduledMessage) error {
+	now := time.Now().UTC()
+	message.NextRunAt = NextScheduledRun(message.ScheduleType, message.IntervalMinutes, message.DailyTime, now)
+	result, err := s.db.Exec(`UPDATE scheduled_messages SET
+		channel_category=?, channel_id=?, content=?, schedule_type=?,
+		interval_minutes=?, daily_time=?, enabled=?, next_run_at=?,
+		last_status='waiting', last_error='', updated_at=?
+		WHERE id=?`,
+		message.ChannelCategory, message.ChannelID, message.Content, message.ScheduleType,
+		message.IntervalMinutes, message.DailyTime, message.Enabled, message.NextRunAt, now, message.ID)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	message.UpdatedAt = now
+	return nil
+}
+
+func (s *Store) DeleteScheduledMessage(id int64) error {
+	result, err := s.db.Exec("DELETE FROM scheduled_messages WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DisableScheduledMessagesForChannel(channelID int64) error {
+	_, err := s.db.Exec(`UPDATE scheduled_messages SET enabled=0,
+		last_status='channel_deleted', last_error='频道已删除',
+		updated_at=CURRENT_TIMESTAMP WHERE channel_id=?`, channelID)
+	return err
+}
+
+func (s *Store) GetScheduledMessage(id int64) (*ScheduledMessage, error) {
+	row := s.db.QueryRow(`SELECT id, channel_category, channel_id, content,
+		schedule_type, interval_minutes, daily_time, enabled, last_sent_at,
+		next_run_at, last_status, last_error, created_at, updated_at
+		FROM scheduled_messages WHERE id=?`, id)
+	return scanScheduledMessage(row)
+}
+
+func (s *Store) ListScheduledMessages() ([]ScheduledMessage, error) {
+	rows, err := s.db.Query(`SELECT id, channel_category, channel_id, content,
+		schedule_type, interval_minutes, daily_time, enabled, last_sent_at,
+		next_run_at, last_status, last_error, created_at, updated_at
+		FROM scheduled_messages ORDER BY channel_category, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	messages := make([]ScheduledMessage, 0)
+	for rows.Next() {
+		message, err := scanScheduledMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, *message)
+	}
+	return messages, rows.Err()
+}
+
+func (s *Store) GetDueScheduledMessages(now time.Time) ([]ScheduledMessage, error) {
+	rows, err := s.db.Query(`SELECT id, channel_category, channel_id, content,
+		schedule_type, interval_minutes, daily_time, enabled, last_sent_at,
+		next_run_at, last_status, last_error, created_at, updated_at
+		FROM scheduled_messages
+		WHERE enabled=1
+		ORDER BY next_run_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	messages := make([]ScheduledMessage, 0)
+	for rows.Next() {
+		message, err := scanScheduledMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		if !message.NextRunAt.After(now.UTC()) {
+			messages = append(messages, *message)
+		}
+	}
+	return messages, rows.Err()
+}
+
+func (s *Store) MarkScheduledMessageResult(id int64, sent bool, nextRun time.Time, status, lastError string) error {
+	if sent {
+		_, err := s.db.Exec(`UPDATE scheduled_messages SET
+			last_sent_at=CURRENT_TIMESTAMP, next_run_at=?, last_status=?,
+			last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+			nextRun.UTC(), status, lastError, id)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE scheduled_messages SET
+		next_run_at=?, last_status=?, last_error=?, updated_at=CURRENT_TIMESTAMP
+		WHERE id=?`, nextRun.UTC(), status, lastError, id)
+	return err
+}
+
+func (s *Store) MarkScheduledMessageSending(id int64, nextRun time.Time) error {
+	_, err := s.db.Exec(`UPDATE scheduled_messages SET next_run_at=?,
+		last_status='sending', last_error='', updated_at=CURRENT_TIMESTAMP
+		WHERE id=?`, nextRun.UTC(), id)
+	return err
+}
+
+type scheduledScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanScheduledMessage(scanner scheduledScanner) (*ScheduledMessage, error) {
+	var message ScheduledMessage
+	var lastSent sql.NullTime
+	err := scanner.Scan(
+		&message.ID, &message.ChannelCategory, &message.ChannelID, &message.Content,
+		&message.ScheduleType, &message.IntervalMinutes, &message.DailyTime,
+		&message.Enabled, &lastSent, &message.NextRunAt, &message.LastStatus,
+		&message.LastError, &message.CreatedAt, &message.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if lastSent.Valid {
+		last := lastSent.Time
+		message.LastSentAt = &last
+	}
+	return &message, nil
 }
 
 // HasContentPosted checks whether a source item was already uploaded.

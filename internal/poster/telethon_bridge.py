@@ -212,7 +212,11 @@ async def main():
             kwargs['progress_callback'] = progress
         msg = await client.send_file(entity, file_to_send, **kwargs)
         print(json.dumps({'message_id': msg.id, 'thumb_submitted': bool(kwargs.get('thumb'))})); await client.disconnect(); return
-    msg = await client.send_message(entity, req['text'])
+    msg = await client.send_message(
+        entity,
+        req['text'],
+        parse_mode=None if req.get('plain_text') else (),
+    )
     print(json.dumps({'message_id': msg.id}))
     await client.disconnect()
 

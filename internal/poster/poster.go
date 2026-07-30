@@ -70,7 +70,21 @@ func (p *Poster) PostHTML(text string) (int, error) {
 	return p.sendTelethon(text, p.pickChannel("default"))
 }
 
+func (p *Poster) PostToChannel(text string, chatID int64) (int, error) {
+	if chatID == 0 {
+		return 0, errors.New("channel is not configured")
+	}
+	if strings.TrimSpace(text) == "" {
+		return 0, errors.New("scheduled message is empty")
+	}
+	return p.sendTelethonRequest(text, chatID, true)
+}
+
 func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
+	return p.sendTelethonRequest(text, chatID, false)
+}
+
+func (p *Poster) sendTelethonRequest(text string, chatID int64, plainText bool) (int, error) {
 	telethonMu.Lock()
 	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
@@ -82,7 +96,7 @@ func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 		}
 	}
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
-	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"chat_id":%d,"text":%q}`, chatID, text))
+	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"chat_id":%d,"text":%q,"plain_text":%t}`, chatID, text, plainText))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(string(out)))

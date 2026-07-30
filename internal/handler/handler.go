@@ -56,8 +56,136 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/telethon/request-code", h.telethonRequestCode)
 		r.Post("/api/telethon/login", h.telethonLogin)
 		r.Get("/api/telethon/status", h.telethonStatus)
+		r.Get("/api/scheduled-messages", h.listScheduledMessages)
+		r.Post("/api/scheduled-messages", h.createScheduledMessage)
+		r.Put("/api/scheduled-messages/{id}", h.updateScheduledMessage)
+		r.Delete("/api/scheduled-messages/{id}", h.deleteScheduledMessage)
+		r.Post("/api/scheduled-messages/{id}/send", h.sendScheduledMessageNow)
 		r.Get("/ws", h.hub.HandleWS)
 	})
+}
+
+func (h *Handler) listScheduledMessages(w http.ResponseWriter, r *http.Request) {
+	messages, err := h.store.ListScheduledMessages()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, messages)
+}
+
+func (h *Handler) createScheduledMessage(w http.ResponseWriter, r *http.Request) {
+	message, err := h.decodeScheduledMessage(r)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.store.CreateScheduledMessage(message); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.hub.Broadcast("scheduled_message_changed", map[string]interface{}{"action": "created", "id": message.ID})
+	jsonOK(w, message)
+}
+
+func (h *Handler) updateScheduledMessage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		jsonError(w, "invalid scheduled message id", http.StatusBadRequest)
+		return
+	}
+	message, err := h.decodeScheduledMessage(r)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	message.ID = id
+	if err := h.store.UpdateScheduledMessage(message); err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	h.hub.Broadcast("scheduled_message_changed", map[string]interface{}{"action": "updated", "id": id})
+	jsonOK(w, message)
+}
+
+func (h *Handler) deleteScheduledMessage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		jsonError(w, "invalid scheduled message id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteScheduledMessage(id); err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	h.hub.Broadcast("scheduled_message_changed", map[string]interface{}{"action": "deleted", "id": id})
+	jsonOK(w, map[string]string{"status": "deleted"})
+}
+
+func (h *Handler) sendScheduledMessageNow(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		jsonError(w, "invalid scheduled message id", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.store.GetScheduledMessage(id); err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go func() {
+		sendErr := h.sched.SendScheduledMessageNow(id)
+		status := "sent"
+		if sendErr != nil {
+			status = "failed"
+		}
+		h.hub.Broadcast("scheduled_message_sent", map[string]interface{}{"id": id, "status": status})
+	}()
+	jsonOK(w, map[string]string{"status": "sending"})
+}
+
+func (h *Handler) decodeScheduledMessage(r *http.Request) (*store.ScheduledMessage, error) {
+	var message store.ScheduledMessage
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&message); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+	message.ChannelCategory = strings.TrimSpace(message.ChannelCategory)
+	message.Content = strings.TrimSpace(message.Content)
+	message.ScheduleType = strings.TrimSpace(strings.ToLower(message.ScheduleType))
+	message.DailyTime = strings.TrimSpace(message.DailyTime)
+	if message.ChannelID == 0 || message.ChannelCategory == "" {
+		return nil, fmt.Errorf("请选择频道")
+	}
+	configured := false
+	for _, channelID := range h.cfg.ChannelMap[message.ChannelCategory] {
+		if channelID == message.ChannelID {
+			configured = true
+			break
+		}
+	}
+	if !configured {
+		return nil, fmt.Errorf("频道不存在或已被删除")
+	}
+	if message.Content == "" {
+		return nil, fmt.Errorf("发言文案不能为空")
+	}
+	if len([]rune(message.Content)) > 4096 {
+		return nil, fmt.Errorf("发言文案不能超过 4096 个字符")
+	}
+	switch message.ScheduleType {
+	case "interval":
+		if message.IntervalMinutes < 5 || message.IntervalMinutes > 10080 {
+			return nil, fmt.Errorf("发送间隔必须在 5 分钟到 7 天之间")
+		}
+		message.DailyTime = ""
+	case "daily":
+		if _, err := time.Parse("15:04", message.DailyTime); err != nil {
+			return nil, fmt.Errorf("每日发送时间格式不正确")
+		}
+		message.IntervalMinutes = 0
+	default:
+		return nil, fmt.Errorf("请选择发送频率")
+	}
+	return &message, nil
 }
 
 func (h *Handler) telethonRequestCode(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +277,10 @@ func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		h.cfg.ChannelMap[cat] = out
 	}
 	if err := h.cfg.Save("config.json"); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	if err := h.store.DisableScheduledMessagesForChannel(body.ID); err != nil {
 		jsonError(w, err.Error(), 500)
 		return
 	}
