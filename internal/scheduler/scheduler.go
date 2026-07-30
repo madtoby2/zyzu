@@ -457,6 +457,11 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL, s.Cfg.SeparateCover)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)
+			if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
+				log.Printf("[video] cleanup failed upload %s: %v", filePath, removeErr)
+			} else {
+				log.Printf("[video] removed failed upload: %s", filePath)
+			}
 			s.setChannelJob(category, "retrying", item, downloadedSize)
 			_ = s.Store.LogContentFailure(content.DedupKey(item))
 			continue

@@ -1,6 +1,36 @@
-import asyncio, json, os, subprocess, sys
+import asyncio, json, os, subprocess, sys, time
 from telethon import TelegramClient, functions, types, utils
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo
+
+try:
+    from aiofasttelethonhelper import fast_upload
+except ImportError:
+    fast_upload = None
+
+class UploadProgress:
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.started = time.monotonic()
+        self.last_emit = 0.0
+
+    def __call__(self, *args, **kwargs):
+        done = kwargs.get('done', args[0] if args else 0) or 0
+        total = kwargs.get('total', args[1] if len(args) > 1 else 0) or 0
+        now = time.monotonic()
+        if done < total and now - self.last_emit < 5:
+            return
+        self.last_emit = now
+        elapsed = max(now - self.started, 0.001)
+        speed = done / elapsed
+        percent = done * 100 / total if total else 0
+        eta = (total - done) / speed if speed > 0 and total > done else 0
+        print(
+            f"[upload] {os.path.basename(self.file_path)} "
+            f"{percent:.1f}% ({done / 1048576:.1f}/{total / 1048576:.1f}MB) "
+            f"{speed / 1048576:.2f}MB/s ETA {eta / 60:.1f}min",
+            file=sys.stderr,
+            flush=True,
+        )
 
 def video_attributes(file_path):
     try:
@@ -31,6 +61,47 @@ def video_attributes(file_path):
         pass
     return None
 
+async def prepare_video_media(client, video_path, thumb_path, progress):
+    attributes = video_attributes(video_path)
+    if fast_upload:
+        print(
+            f"[upload] parallel multipart started: "
+            f"{os.path.basename(video_path)} ({os.path.getsize(video_path) / 1048576:.1f}MB)",
+            file=sys.stderr,
+            flush=True,
+        )
+        uploaded_file = await fast_upload(
+            client=client,
+            file_path=video_path,
+            progress_callback=progress,
+        )
+        _, video_media, _ = await client._file_to_media(
+            uploaded_file,
+            force_document=False,
+            supports_streaming=True,
+            attributes=attributes,
+            thumb=thumb_path,
+            mime_type='video/mp4',
+            nosound_video=True,
+        )
+        return video_media
+
+    print(
+        "[upload] aiofasttelethonhelper unavailable; using single connection",
+        file=sys.stderr,
+        flush=True,
+    )
+    _, video_media, _ = await client._file_to_media(
+        video_path,
+        force_document=False,
+        supports_streaming=True,
+        attributes=attributes,
+        thumb=thumb_path,
+        progress_callback=progress,
+        nosound_video=True,
+    )
+    return video_media
+
 async def send_cover_video_album(client, entity, cover_path, thumb_path, video_path, caption):
     _, cover_media, _ = await client._file_to_media(
         cover_path,
@@ -41,13 +112,11 @@ async def send_cover_video_album(client, entity, cover_path, thumb_path, video_p
         uploaded = await client(functions.messages.UploadMediaRequest(entity, media=cover_media))
         cover_media = utils.get_input_media(uploaded.photo)
 
-    _, video_media, _ = await client._file_to_media(
+    video_media = await prepare_video_media(
+        client,
         video_path,
-        force_document=False,
-        supports_streaming=True,
-        attributes=video_attributes(video_path),
-        thumb=thumb_path,
-        nosound_video=True,
+        thumb_path,
+        UploadProgress(video_path),
     )
     if isinstance(video_media, (types.InputMediaUploadedDocument, types.InputMediaDocumentExternal)):
         uploaded = await client(functions.messages.UploadMediaRequest(entity, media=video_media))
@@ -117,13 +186,31 @@ async def main():
             'parse_mode': 'html',
             'supports_streaming': True,
             'force_document': False,
+            'mime_type': 'video/mp4',
         }
         if thumb_path and os.path.isfile(thumb_path):
             kwargs['thumb'] = thumb_path
         attributes = video_attributes(req['file_path'])
         if attributes:
             kwargs['attributes'] = attributes
-        msg = await client.send_file(entity, req['file_path'], **kwargs)
+        progress = UploadProgress(req['file_path'])
+        if fast_upload:
+            print(
+                f"[upload] parallel multipart started: "
+                f"{os.path.basename(req['file_path'])} "
+                f"({os.path.getsize(req['file_path']) / 1048576:.1f}MB)",
+                file=sys.stderr,
+                flush=True,
+            )
+            file_to_send = await fast_upload(
+                client=client,
+                file_path=req['file_path'],
+                progress_callback=progress,
+            )
+        else:
+            file_to_send = req['file_path']
+            kwargs['progress_callback'] = progress
+        msg = await client.send_file(entity, file_to_send, **kwargs)
         print(json.dumps({'message_id': msg.id, 'thumb_submitted': bool(kwargs.get('thumb'))})); await client.disconnect(); return
     msg = await client.send_message(entity, req['text'])
     print(json.dumps({'message_id': msg.id}))

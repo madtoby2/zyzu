@@ -1,6 +1,7 @@
 package poster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -171,7 +172,11 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, cover
 	defer cancel()
 	cmd := exec.CommandContext(ctx, python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = strings.NewReader(payload)
-	out, err := cmd.CombinedOutput()
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	out := stdout.Bytes()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return 0, fmt.Errorf("telethon video upload timed out after %s", timeout)
 	}
