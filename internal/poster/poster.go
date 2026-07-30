@@ -114,7 +114,7 @@ func (p *Poster) sendTelethonRequest(text string, chatID int64, plainText bool) 
 	return result.MessageID, nil
 }
 
-func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, albumCover bool) (int, error) {
+func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, embedCover bool) (int, error) {
 	if _, err := os.Stat(filePath); err != nil {
 		return 0, fmt.Errorf("open video: %w", err)
 	}
@@ -123,7 +123,7 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, 
 		return 0, fmt.Errorf("no channel configured for category %q", category)
 	}
 	coverPath := ""
-	if albumCover && coverURL != "" {
+	if embedCover && coverURL != "" {
 		var coverErr error
 		coverPath, coverErr = prepareCover(coverURL, filePath)
 		if coverErr != nil {
@@ -140,7 +140,7 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, 
 	if thumbPath != "" {
 		defer os.Remove(thumbPath)
 	}
-	return p.sendTelethonVideo(filePath, caption, chatID, coverPath, thumbPath, albumCover)
+	return p.sendTelethonVideo(filePath, caption, chatID, coverPath, thumbPath, embedCover)
 	/* req, _ := http.NewRequest("POST", tgAPI+p.token+"/sendVideo", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
@@ -164,7 +164,7 @@ func (p *Poster) PostVideo(filePath, caption, category string, coverURL string, 
 	return result.Result.MessageID, nil */
 }
 
-func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, coverPath, thumbPath string, albumCover bool) (int, error) {
+func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, coverPath, thumbPath string, embedCover bool) (int, error) {
 	telethonMu.Lock()
 	defer telethonMu.Unlock()
 	python := os.Getenv("PYTHON_BIN")
@@ -175,7 +175,7 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, cover
 			python = "python3"
 		}
 	}
-	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"cover_path":%q,"thumb_path":%q,"album_cover":%t}`, chatID, filePath, caption, coverPath, thumbPath, albumCover)
+	payload := fmt.Sprintf(`{"action":"upload_video","chat_id":%d,"file_path":%q,"caption":%q,"cover_path":%q,"thumb_path":%q,"embed_cover":%t}`, chatID, filePath, caption, coverPath, thumbPath, embedCover)
 	timeout := 90 * time.Minute
 	if raw := strings.TrimSpace(os.Getenv("ZYZU_UPLOAD_TIMEOUT_MINUTES")); raw != "" {
 		if minutes, parseErr := strconv.Atoi(raw); parseErr == nil && minutes >= 10 {
@@ -198,10 +198,9 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, cover
 		return 0, fmt.Errorf("telethon video: %s", strings.TrimSpace(string(out)))
 	}
 	var result struct {
-		MessageID      int    `json:"message_id"`
-		CoverMessageID int    `json:"cover_message_id"`
-		Album          bool   `json:"album"`
-		Error          string `json:"error"`
+		MessageID     int    `json:"message_id"`
+		CoverAttached bool   `json:"cover_attached"`
+		Error         string `json:"error"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
 		return 0, err
@@ -209,8 +208,8 @@ func (p *Poster) sendTelethonVideo(filePath, caption string, chatID int64, cover
 	if result.Error != "" {
 		return 0, errors.New(result.Error)
 	}
-	if result.Album {
-		log.Printf("[cover] 封面与视频已作为同一图集提交: cover_message_id=%d video_message_id=%d", result.CoverMessageID, result.MessageID)
+	if result.CoverAttached {
+		log.Printf("[cover] 资源站封面已嵌入可预览视频消息: video_message_id=%d", result.MessageID)
 	} else if thumbPath != "" {
 		log.Printf("[cover] 封面已随视频提交: %s", thumbPath)
 	}

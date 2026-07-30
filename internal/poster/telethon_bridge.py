@@ -102,7 +102,7 @@ async def prepare_video_media(client, video_path, thumb_path, progress):
     )
     return video_media
 
-async def send_cover_video_album(client, entity, cover_path, thumb_path, video_path, caption):
+async def upload_video_cover(client, entity, cover_path):
     _, cover_media, _ = await client._file_to_media(
         cover_path,
         force_document=False,
@@ -110,30 +110,32 @@ async def send_cover_video_album(client, entity, cover_path, thumb_path, video_p
     )
     if isinstance(cover_media, (types.InputMediaUploadedPhoto, types.InputMediaPhotoExternal)):
         uploaded = await client(functions.messages.UploadMediaRequest(entity, media=cover_media))
-        cover_media = utils.get_input_media(uploaded.photo)
+        return utils.get_input_photo(uploaded.photo)
+    if isinstance(cover_media, types.InputMediaPhoto):
+        return cover_media.id
+    raise TypeError(f'unsupported video cover media: {type(cover_media).__name__}')
 
+async def send_video_with_cover(client, entity, cover_path, thumb_path, video_path, caption):
+    video_cover = await upload_video_cover(client, entity, cover_path)
     video_media = await prepare_video_media(
         client,
         video_path,
         thumb_path,
         UploadProgress(video_path),
     )
-    if isinstance(video_media, (types.InputMediaUploadedDocument, types.InputMediaDocumentExternal)):
-        uploaded = await client(functions.messages.UploadMediaRequest(entity, media=video_media))
-        video_media = utils.get_input_media(uploaded.document, supports_streaming=True)
+    if not isinstance(video_media, (types.InputMediaUploadedDocument, types.InputMediaDocument)):
+        raise TypeError(f'unsupported video media: {type(video_media).__name__}')
+    video_media.video_cover = video_cover
 
     caption_text, caption_entities = await client._parse_message_text(caption or '', 'html')
-    media = [
-        types.InputSingleMedia(
-            cover_media,
-            message=caption_text,
-            entities=caption_entities,
-        ),
-        types.InputSingleMedia(video_media, message='', entities=None),
-    ]
-    result = await client(functions.messages.SendMultiMediaRequest(entity, multi_media=media))
-    messages = client._get_response_message([item.random_id for item in media], result, entity)
-    return messages[0], messages[1]
+    request = functions.messages.SendMediaRequest(
+        peer=entity,
+        media=video_media,
+        message=caption_text,
+        entities=caption_entities,
+    )
+    result = await client(request)
+    return client._get_response_message(request, result, entity)
 
 async def main():
     req = json.loads(sys.stdin.read())
@@ -164,23 +166,31 @@ async def main():
     if req.get('action') == 'upload_video':
         cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')
-        if req.get('album_cover') and cover_path and os.path.isfile(cover_path):
-            cover_msg, video_msg = await send_cover_video_album(
-                client,
-                entity,
-                cover_path,
-                thumb_path if thumb_path and os.path.isfile(thumb_path) else None,
-                req['file_path'],
-                req.get('caption', ''),
-            )
-            print(json.dumps({
-                'message_id': video_msg.id,
-                'cover_message_id': cover_msg.id,
-                'album': True,
-                'thumb_submitted': True,
-            }))
-            await client.disconnect()
-            return
+        if (req.get('embed_cover') or req.get('album_cover')) and cover_path and os.path.isfile(cover_path):
+            try:
+                video_msg = await send_video_with_cover(
+                    client,
+                    entity,
+                    cover_path,
+                    thumb_path if thumb_path and os.path.isfile(thumb_path) else None,
+                    req['file_path'],
+                    req.get('caption', ''),
+                )
+            except Exception as exc:
+                print(
+                    f"[cover] native video cover failed; "
+                    f"falling back to a standalone streamable video: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                print(json.dumps({
+                    'message_id': video_msg.id,
+                    'cover_attached': True,
+                    'thumb_submitted': True,
+                }))
+                await client.disconnect()
+                return
         kwargs = {
             'caption': req.get('caption', ''),
             'parse_mode': 'html',
