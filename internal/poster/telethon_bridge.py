@@ -1,4 +1,4 @@
-import asyncio, json, os, subprocess, sys, time
+import atexit, asyncio, json, os, subprocess, sys, time
 from telethon import TelegramClient, functions, types, utils
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo
 
@@ -60,6 +60,26 @@ def video_attributes(file_path):
     except Exception:
         pass
     return None
+
+def cover_thumbnail(cover_path):
+    thumb_path = cover_path + '.telegram-thumb.jpg'
+    for quality in ('5', '10', '16'):
+        result = subprocess.run([
+            'ffmpeg', '-y', '-loglevel', 'error',
+            '-i', cover_path,
+            '-vf',
+            'scale=320:180:force_original_aspect_ratio=decrease,'
+            'pad=320:180:(ow-iw)/2:(oh-ih)/2:black',
+            '-frames:v', '1', '-q:v', quality,
+            thumb_path,
+        ], capture_output=True, text=True, timeout=20)
+        if result.returncode == 0 and os.path.isfile(thumb_path):
+            if os.path.getsize(thumb_path) <= 200 * 1024:
+                atexit.register(lambda: os.path.isfile(thumb_path) and os.remove(thumb_path))
+                return thumb_path
+    if os.path.isfile(thumb_path):
+        os.remove(thumb_path)
+    raise RuntimeError('resource cover could not be converted to a Telegram thumbnail')
 
 async def prepare_video_media(client, video_path, thumb_path, progress):
     attributes = video_attributes(video_path)
@@ -167,6 +187,20 @@ async def main():
         cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')
         if (req.get('embed_cover') or req.get('album_cover')) and cover_path and os.path.isfile(cover_path):
+            try:
+                thumb_path = cover_thumbnail(cover_path)
+                print(
+                    f"[cover] resource poster prepared as video thumbnail: {thumb_path}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[cover] resource poster thumbnail failed; "
+                    f"using captured video frame: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             try:
                 video_msg = await send_video_with_cover(
                     client,
