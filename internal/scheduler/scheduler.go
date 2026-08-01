@@ -254,10 +254,23 @@ func (s *Scheduler) runContent(force bool) {
 		log.Printf("[scheduler] get sources: %v", err)
 		return
 	}
+	activeSources := make([]store.Station, 0, len(allSources))
+	for _, source := range allSources {
+		sourceKey := sourceFailureKeyForStation(source)
+		cooldown, cooldownErr := s.Store.SourceInFailureCooldown(sourceKey, 6*time.Hour)
+		if cooldownErr != nil {
+			log.Printf("[content] source cooldown check %s: %v", source.Name, cooldownErr)
+		}
+		if cooldown {
+			log.Printf("[content] skip source %s: download failure cooldown", source.Name)
+			continue
+		}
+		activeSources = append(activeSources, source)
+	}
 	// Keep fast global sources, then add explicitly categorized sources for
 	// each configured channel. This makes the UI's station categories affect
 	// what the corresponding channel actually receives.
-	sources := selectContentSources(allSources, s.Cfg, 5, 2)
+	sources := selectContentSources(activeSources, s.Cfg, 5, 2)
 	if len(sources) == 0 {
 		return
 	}
@@ -485,8 +498,14 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 
 func (s *Scheduler) runVideoCategory(category string, items []content.ContentItem) int {
 	posted := 0
+	failedSources := make(map[string]bool)
 	for _, item := range items {
 		if len(item.Episodes) == 0 {
+			continue
+		}
+		sourceKey := sourceFailureKeyForItem(item)
+		if failedSources[sourceKey] {
+			log.Printf("[video] skip %s: source %s already failed this round", item.Title, item.Source)
 			continue
 		}
 		s.setChannelJob(category, "downloading", item, 0)
@@ -508,6 +527,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		if err != nil || filePath == "" {
 			s.setChannelJob(category, "retrying", item, 0)
 			_ = s.Store.LogContentFailure(content.DedupKey(item))
+			failedSources[sourceKey] = true
+			reason := compactError(err)
+			_ = s.Store.LogSourceFailure(sourceKey, item.Source, reason)
+			_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已暂时跳过资源站：%s · %s · %s", item.Source, item.Title, reason))
 			continue
 		}
 
@@ -541,6 +564,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		}
 
 		posted++
+		_ = s.Store.ClearSourceFailure(sourceKey)
 		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
 			log.Printf("[content] record %s: %v", item.Title, err)
 		}
@@ -549,6 +573,33 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
 	return posted
+}
+
+func sourceFailureKeyForStation(source store.Station) string {
+	key := strings.TrimSpace(source.APIURL)
+	if key == "" {
+		key = strings.TrimSpace(source.Slug)
+	}
+	return strings.TrimRight(strings.ToLower(key), "/")
+}
+
+func sourceFailureKeyForItem(item content.ContentItem) string {
+	key := strings.TrimSpace(item.SourceURL)
+	if key == "" {
+		key = strings.TrimSpace(item.Source)
+	}
+	return strings.TrimRight(strings.ToLower(key), "/")
+}
+
+func compactError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	msg := strings.Join(strings.Fields(err.Error()), " ")
+	if len(msg) > 240 {
+		return msg[:240]
+	}
+	return msg
 }
 
 func selectRoutableItems(items []content.ContentItem, limit int, cfg *config.Config) []content.ContentItem {

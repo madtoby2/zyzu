@@ -129,6 +129,14 @@ func (s *Store) migrate() error {
 		fail_count INTEGER DEFAULT 1
 	);
 	CREATE INDEX IF NOT EXISTS idx_content_failures_failed_at ON content_failures(failed_at);
+	CREATE TABLE IF NOT EXISTS content_source_failures (
+		source_key TEXT PRIMARY KEY,
+		source_name TEXT DEFAULT '',
+		failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		fail_count INTEGER DEFAULT 1,
+		last_error TEXT DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS idx_content_source_failures_failed_at ON content_source_failures(failed_at);
 	CREATE TABLE IF NOT EXISTS scheduled_messages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		channel_category TEXT NOT NULL,
@@ -363,6 +371,37 @@ func (s *Store) LogContentFailure(key string) error {
 	_, err := s.db.Exec(`INSERT INTO content_failures (content_key, failed_at, fail_count)
 		VALUES (?, CURRENT_TIMESTAMP, 1)
 		ON CONFLICT(content_key) DO UPDATE SET failed_at=CURRENT_TIMESTAMP, fail_count=fail_count+1`, key)
+	return err
+}
+
+func (s *Store) SourceInFailureCooldown(sourceKey string, within time.Duration) (bool, error) {
+	sourceKey = strings.TrimSpace(sourceKey)
+	if sourceKey == "" {
+		return false, nil
+	}
+	var n int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM content_source_failures WHERE source_key=? AND failed_at > ?", sourceKey, time.Now().Add(-within)).Scan(&n)
+	return n > 0, err
+}
+
+func (s *Store) LogSourceFailure(sourceKey, sourceName, reason string) error {
+	sourceKey = strings.TrimSpace(sourceKey)
+	if sourceKey == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO content_source_failures (source_key, source_name, failed_at, fail_count, last_error)
+		VALUES (?, ?, CURRENT_TIMESTAMP, 1, ?)
+		ON CONFLICT(source_key) DO UPDATE SET source_name=excluded.source_name, failed_at=CURRENT_TIMESTAMP, fail_count=fail_count+1, last_error=excluded.last_error`,
+		sourceKey, sourceName, reason)
+	return err
+}
+
+func (s *Store) ClearSourceFailure(sourceKey string) error {
+	sourceKey = strings.TrimSpace(sourceKey)
+	if sourceKey == "" {
+		return nil
+	}
+	_, err := s.db.Exec("DELETE FROM content_source_failures WHERE source_key=?", sourceKey)
 	return err
 }
 
