@@ -250,14 +250,16 @@ function defaultVideoFormatFor(category){
   if(['电影','movie'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
   if(['电视剧','电视','tv'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
   if(['动漫','anime'].includes(c))return '{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
-  return document.getElementById('cfg-video-format')?.value||'{title}\n\n简介：{intro}\n分类：{category}\n更新：{updated_at}';
+  if(['综艺','variety'].includes(c))return '{title}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
+  if(['纪录片','documentary'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n时长：{duration}\n更新：{updated_at}';
+  return document.getElementById('cfg-video-format')?.value||'{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n演员：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
 }
 function videoVariablesFor(category){
   const base=[['{title}','标题'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间']];
   const c=String(category||'').toLowerCase();
   if(['成人','adult','av'].includes(c))return [...base,[ '{actor}','演员' ],[ '{code}','番号/资源ID' ],[ '{tags}','标签组' ]];
   if(['电影','movie','电视剧','电视','tv'].includes(c))return [...base,[ '{actor}','主演' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ]];
-  return [...base,[ '{actor}','演员/主演' ],[ '{area}','地区' ],[ '{year}','年份' ],[ '{tags}','标签组' ],[ '{code}','资源ID' ]];
+  return [...base,[ '{actor}','演员/主演/嘉宾' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ],[ '{code}','资源ID' ],[ '{raw_category}','接口原分类' ]];
 }
 function variableButtons(category){
   return videoVariablesFor(category).map(v=>`<button class="btn btn-o" type="button" onclick="insertVideoVariable('${v[0]}')" title="${esc(v[1])}">${esc(v[0])}</button>`).join('');
@@ -343,7 +345,7 @@ async function api(path,method='GET',body=null){
 async function saveChannels(){
   try{await api('/api/config','PUT',{channel_map:channelMap});addLog('ok','频道设置已保存')}catch(e){addLog('err','频道保存失败: '+e.message)}
 }
-async function addChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','POST',{category,id});await loadConfig();}
+async function addChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}if(!videoFormats[category])videoFormats[category]=defaultVideoFormatFor(category);await api('/api/channels','POST',{category,id});await api('/api/config','PUT',{video_format:document.getElementById('cfg-video-format').value,video_formats:videoFormats});await loadConfig();}
 async function removeChannel(){const category=document.getElementById('channel-category').value.trim();const id=Number(document.getElementById('channel-id').value);if(!category||!id){addLog('err','请输入分类和频道 ID');return}await api('/api/channels','DELETE',{category,id});await loadConfig();}
 async function saveConfig(){
   await api('/api/config','PUT',{

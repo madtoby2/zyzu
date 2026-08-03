@@ -60,14 +60,20 @@ func Default() *Config {
 
 func defaultVideoFormats() map[string]string {
 	return map[string]string{
-		"成人":    "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
-		"adult": "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
-		"电影":    "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"movie": "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"电视剧":   "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"tv":    "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"动漫":    "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"anime": "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"default":     "{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"综合影视":        "{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"成人":          "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
+		"adult":       "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
+		"电影":          "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"movie":       "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"电视剧":         "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"tv":          "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"动漫":          "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"anime":       "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"综艺":          "{title}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"variety":     "{title}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"纪录片":         "{title}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n时长：{duration}\n更新：{updated_at}",
+		"documentary": "{title}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n时长：{duration}\n更新：{updated_at}",
 	}
 }
 
@@ -83,10 +89,21 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
-	if cfg.VideoFormats == nil {
-		cfg.VideoFormats = defaultVideoFormats()
-	}
+	cfg.VideoFormats = mergeVideoFormatDefaults(cfg.VideoFormats)
 	return cfg, nil
+}
+
+func mergeVideoFormatDefaults(formats map[string]string) map[string]string {
+	defaults := defaultVideoFormats()
+	if formats == nil {
+		return defaults
+	}
+	for category, format := range defaults {
+		if strings.TrimSpace(formats[category]) == "" {
+			formats[category] = format
+		}
+	}
+	return formats
 }
 
 func (c *Config) Save(path string) error {
@@ -167,6 +184,10 @@ func channelKeys(category string) []string {
 		return []string{"anime", "动漫", "动画"}
 	case "variety", "综艺":
 		return []string{"variety", "综艺"}
+	case "documentary", "纪录片":
+		return []string{"documentary", "纪录片"}
+	case "default", "综合影视":
+		return []string{"default", "综合影视"}
 	default:
 		return []string{category}
 	}
