@@ -19,6 +19,7 @@ type Config struct {
 	ListenAddr       string             `json:"listen_addr"`
 	PostFormat       string             `json:"post_format"`
 	VideoFormat      string             `json:"video_format"`
+	VideoFormats     map[string]string  `json:"video_formats,omitempty"`
 	ContentMode      string             `json:"content_mode"`
 	ContentLimit     int                `json:"content_limit"`
 	SeparateCover    bool               `json:"separate_cover"`
@@ -50,9 +51,23 @@ func Default() *Config {
 		ListenAddr:    ":8080",
 		ContentMode:   "video",
 		ContentLimit:  10,
+		VideoFormats:  defaultVideoFormats(),
 		SeparateCover: true,
 		PostFormat:    "📡 *{name}*  |  {availability}  |  {resource_count}条  |  {response_time}\n🏷 {tags}\n🔗 `{api_url}`",
 		VideoFormat:   "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}",
+	}
+}
+
+func defaultVideoFormats() map[string]string {
+	return map[string]string{
+		"成人":    "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
+		"adult": "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
+		"电影":    "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"movie": "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"电视剧":   "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"tv":    "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"动漫":    "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
+		"anime": "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
 	}
 }
 
@@ -68,6 +83,9 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	if cfg.VideoFormats == nil {
+		cfg.VideoFormats = defaultVideoFormats()
+	}
 	return cfg, nil
 }
 
@@ -77,6 +95,18 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+func (c *Config) VideoFormatFor(category string) string {
+	for _, key := range channelKeys(category) {
+		if format := strings.TrimSpace(c.VideoFormats[key]); format != "" {
+			return format
+		}
+	}
+	if format := strings.TrimSpace(c.VideoFormat); format != "" {
+		return c.VideoFormat
+	}
+	return Default().VideoFormat
 }
 
 // PickChannel returns a random channel for the given category. Falls back to "default" or legacy fields.

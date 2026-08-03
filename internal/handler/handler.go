@@ -585,6 +585,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"channel_intervals": h.cfg.ChannelIntervals,
 		"post_format":       h.cfg.PostFormat,
 		"video_format":      h.cfg.VideoFormat,
+		"video_formats":     h.cfg.VideoFormats,
 		"separate_cover":    h.cfg.SeparateCover,
 		"bot_token":         maskToken(h.cfg.BotToken),
 	}
@@ -617,6 +618,17 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := body["video_format"]; ok {
 		h.cfg.VideoFormat = v.(string)
+	}
+	if v, ok := body["video_formats"]; ok {
+		if raw, ok := v.(map[string]interface{}); ok {
+			formats := make(map[string]string, len(raw))
+			for category, value := range raw {
+				if format, ok := value.(string); ok {
+					formats[category] = format
+				}
+			}
+			h.cfg.VideoFormats = formats
+		}
 	}
 	if v, ok := body["separate_cover"]; ok {
 		if enabled, ok := v.(bool); ok {

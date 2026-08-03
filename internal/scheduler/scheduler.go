@@ -536,14 +536,14 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 
 		downloadedSize := fileSize(filePath)
 		s.setChannelJob(category, "uploading", item, downloadedSize)
-		caption := formatVideoCaption(s.Cfg.VideoFormat, item, category)
+		caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), item, category)
 		if item.TypeName != "" {
 			caption += fmt.Sprintf(" | %s", item.TypeName)
 		}
 		caption += fmt.Sprintf("\n📡 %s", item.Source)
 
 		// The configured template is authoritative; discard legacy appended source text.
-		caption = formatVideoCaption(s.Cfg.VideoFormat, item, category)
+		caption = formatVideoCaption(s.Cfg.VideoFormatFor(category), item, category)
 		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL, s.Cfg.SeparateCover)
 		if err != nil {
 			log.Printf("[video] upload %s: %v", item.Title, err)

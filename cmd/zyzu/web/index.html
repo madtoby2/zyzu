@@ -132,9 +132,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>内容计划<input id="cfg-content-cron"></label>
       <label>模式 <select id="cfg-mode"><option value="video">video</option><option value="split">split</option><option value="digest">digest</option></select></label>
       <label>抓取条数<input id="cfg-limit" type="number" value="10"></label>
-      <label>视频资源文案<textarea id="cfg-video-format" rows="5" placeholder="[资源码] {code}\n{title}\n分类：{category}\n来源：{source}"></textarea></label>
+      <label>默认视频文案（新频道兜底）<textarea id="cfg-video-format" rows="5" placeholder="[资源码] {code}\n{title}\n分类：{category}"></textarea></label>
       <label style="display:flex;align-items:center;gap:8px"><input id="cfg-separate-cover" type="checkbox" style="width:auto"> 使用资源站封面作为视频封面（保留视频预览）</label>
-      <small style="display:block;color:#888;margin-top:-6px">视频变量：{channel} 频道文案、{category} 频道分类、{tags} 标签、{raw_category} 接口原分类、{class} 内容分类、{code}/{id} 资源码、{title}/{name} 标题、{intro} 简介（为空时自动隐藏整行）、{actor} 演员、{director} 导演、{area} 地区、{language} 语言、{year} 年份、{score} 评分、{duration} 时长、{remarks} 备注、{type} 类型、{source} 来源、{source_url} 接口、{cover} 封面附件（不输出文字）、{cover_url} 封面地址、{updated_at} 更新时间。</small>
+      <small style="display:block;color:#888;margin-top:-6px">每个频道的正式视频文案在“频道”页点击频道卡片单独设置；这里仅作为新频道或未配置频道的兜底。</small>
       <button class="btn btn-p" onclick="saveConfig()">保存</button>
     </div>
   </div>
@@ -166,7 +166,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 <div id="toast-area"></div>
 
 <script>
-let server='',key='',stations=[],ws,channelMap={},channelIntervals={},channelJobs={},scheduledMessages=[],logEntries=[],stationPage=1;
+let server='',key='',stations=[],ws,channelMap={},channelIntervals={},channelJobs={},scheduledMessages=[],videoFormats={},logEntries=[],stationPage=1;
 const stationPageSize=10;
 const LS='zyzu_profiles', LOG_PREFIX='zyzu_logs:';
 
@@ -222,7 +222,7 @@ async function loadStations(){
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
-  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-video-format').value=c.video_format||'[资源码] {code}\n{title}\n分类：{category}\n来源：{source}';document.getElementById('cfg-separate-cover').checked=c.separate_cover!==false;
+  if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-video-format').value=c.video_format||'[资源码] {code}\n{title}\n分类：{category}\n来源：{source}';document.getElementById('cfg-separate-cover').checked=c.separate_cover!==false;videoFormats=c.video_formats||{};
   if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};channelIntervals=c.channel_intervals||{};refreshChannelCategories();renderChannelCards()}}catch(e){}
  }
 function defaultChannelInterval(category){if(['成人','adult','AV','av'].includes(category))return 15;if(['电视剧','电视','tv'].includes(category))return 30;if(['电影','movie'].includes(category))return 60;return 30}
@@ -243,6 +243,38 @@ async function saveScheduledMessage(){const modal=document.getElementById('sched
 async function deleteScheduledMessage(id){if(!window.confirm('确定删除这条定时发言吗？'))return;await api(`/api/scheduled-messages/${id}`,'DELETE');await loadScheduledMessages()}
 async function sendScheduledMessage(id){await api(`/api/scheduled-messages/${id}/send`,'POST');showToast('已加入发送队列','info');setTimeout(loadScheduledMessages,2500)}
 function addScheduledForChannel(category,id){closeChannelDetail();switchTab('scheduled');openScheduledModal(0,Number(id))}
+function defaultVideoFormatFor(category){
+  try{category=decodeURIComponent(category)}catch(e){}
+  const c=String(category||'').toLowerCase();
+  if(['成人','adult','av'].includes(c))return '{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}';
+  if(['电影','movie'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
+  if(['电视剧','电视','tv'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
+  if(['动漫','anime'].includes(c))return '{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
+  return document.getElementById('cfg-video-format')?.value||'{title}\n\n简介：{intro}\n分类：{category}\n更新：{updated_at}';
+}
+function videoVariablesFor(category){
+  const base=[['{title}','标题'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间']];
+  const c=String(category||'').toLowerCase();
+  if(['成人','adult','av'].includes(c))return [...base,[ '{actor}','演员' ],[ '{code}','番号/资源ID' ],[ '{tags}','标签组' ]];
+  if(['电影','movie','电视剧','电视','tv'].includes(c))return [...base,[ '{actor}','主演' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ]];
+  return [...base,[ '{actor}','演员/主演' ],[ '{area}','地区' ],[ '{year}','年份' ],[ '{tags}','标签组' ],[ '{code}','资源ID' ]];
+}
+function variableButtons(category){
+  return videoVariablesFor(category).map(v=>`<button class="btn btn-o" type="button" onclick="insertVideoVariable('${v[0]}')" title="${esc(v[1])}">${esc(v[0])}</button>`).join('');
+}
+function insertVideoVariable(token){
+  const el=document.getElementById('channel-video-format');if(!el)return;
+  const start=el.selectionStart||0,end=el.selectionEnd||0;
+  el.value=el.value.slice(0,start)+token+el.value.slice(end);
+  el.focus();el.selectionStart=el.selectionEnd=start+token.length;
+}
+async function saveChannelVideoFormat(){
+  const modal=document.getElementById('channel-detail-modal'),category=modal.dataset.category;
+  if(!category)return;
+  videoFormats[category]=document.getElementById('channel-video-format').value;
+  await api('/api/config','PUT',{video_format:document.getElementById('cfg-video-format').value,video_formats:videoFormats});
+  showToast(`${category} 视频文案已保存`,'ok');
+}
 async function openChannelDetail(category,id){
   category=decodeURIComponent(category);id=decodeURIComponent(id);
   const modal=document.getElementById('channel-detail-modal'), body=document.getElementById('channel-detail-body');
@@ -251,7 +283,8 @@ async function openChannelDetail(category,id){
   const bound=stations.filter(s=>(s.category||'综合影视')===category);
   const interval=channelIntervals[category]||defaultChannelInterval(category);
   const scheduledCount=scheduledMessages.filter(row=>String(row.channel_id)===String(id)).length;
-  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>频道分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>推送方式</small><b>Telethon</b></div></div><div class="detail-section"><h4>当前任务</h4><div class="detail-row" id="channel-current-job">${esc(channelJobText(category))}</div></div><div class="detail-section"><h4>定时发言</h4><div class="detail-row">已配置 ${scheduledCount} 条频道独立文案 <button class="btn btn-p" style="float:right" onclick="addScheduledForChannel('${encodeURIComponent(category)}','${encodeURIComponent(id)}')">添加文案</button></div></div><div class="detail-section"><h4>自动发布频率</h4><div class="config-form"><label>检查间隔<select id="channel-interval"><option value="15">每 15 分钟</option><option value="30">每 30 分钟</option><option value="60">每 1 小时</option><option value="120">每 2 小时</option><option value="360">每 6 小时</option></select></label><button class="btn btn-p" onclick="saveChannelInterval()">保存频率</button></div><small style="color:#999">完整视频需先下载；实际发布时间取决于文件大小和 Telegram 上传速度。</small></div><div class="detail-section"><h4>绑定资源站（按此分类自动推送）</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
+  const videoFormat=videoFormats[category]||defaultVideoFormatFor(category);
+  body.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>频道分类</small><b>${esc(category)}</b></div><div class="detail-item"><small>Telegram 频道 ID</small><b>${esc(id)}</b></div><div class="detail-item"><small>绑定资源站</small><b>${bound.length} 个</b></div><div class="detail-item"><small>推送方式</small><b>Telethon</b></div></div><div class="detail-section"><h4>当前任务</h4><div class="detail-row" id="channel-current-job">${esc(channelJobText(category))}</div></div><div class="detail-section"><h4>视频资源文案</h4><div class="config-form"><textarea id="channel-video-format" rows="8">${esc(videoFormat)}</textarea><div class="toolbar" style="margin:8px 0 0">${variableButtons(category)}</div><small style="color:#999">简介为空时，包含 {intro} 的整行会自动隐藏。封面由资源站封面字段生成，不需要写进文案。</small><div style="margin-top:10px"><button class="btn btn-p" onclick="saveChannelVideoFormat()">保存文案</button><button class="btn btn-o" onclick="document.getElementById('channel-video-format').value=defaultVideoFormatFor('${encodeURIComponent(category)}')">恢复推荐模板</button></div></div></div><div class="detail-section"><h4>定时发言</h4><div class="detail-row">已配置 ${scheduledCount} 条频道独立文案 <button class="btn btn-p" style="float:right" onclick="addScheduledForChannel('${encodeURIComponent(category)}','${encodeURIComponent(id)}')">添加文案</button></div></div><div class="detail-section"><h4>自动发布频率</h4><div class="config-form"><label>检查间隔<select id="channel-interval"><option value="15">每 15 分钟</option><option value="30">每 30 分钟</option><option value="60">每 1 小时</option><option value="120">每 2 小时</option><option value="360">每 6 小时</option></select></label><button class="btn btn-p" onclick="saveChannelInterval()">保存频率</button></div><small style="color:#999">完整视频需先下载；实际发布时间取决于文件大小和 Telegram 上传速度。</small></div><div class="detail-section"><h4>绑定资源站（按此分类自动推送）</h4><div class="detail-list">${bound.length?bound.map(s=>`<div class="detail-row">${esc(s.name)} <span style="color:#888">· ${esc(s.resource_count||'暂无资源')}</span></div>`).join(''):'<div class="empty-detail">暂无同分类资源站，请在资源站页修改分类</div>'}</div></div><div class="detail-section"><h4>最近推送记录</h4><div class="detail-list" id="channel-history"><div class="empty-detail">正在加载...</div></div></div>`;
   document.getElementById('channel-interval').value=String(interval);
   modal.classList.remove('hidden');
   try{const r=await fetch(server+'/api/history?limit=10').then(r=>r.json());const logs=r.ok&&Array.isArray(r.data)?r.data:[];const names=new Map(stations.map(s=>[s.id,s.name]));const el=document.getElementById('channel-history');el.innerHTML=logs.length?logs.map(x=>`<div class="detail-row"><b>${esc(names.get(x.station_id)||'资源站')}</b> · ${esc(new Date(x.posted_at).toLocaleString())}<div style="white-space:pre-wrap;margin-top:6px;color:#eee">${esc(x.content||'暂无推送文字')}</div></div>`).join(''):'<div class="empty-detail">暂无推送记录</div>'}catch(e){const el=document.getElementById('channel-history');if(el)el.innerHTML='<div class="empty-detail">推送记录暂时不可用</div>'}
@@ -321,6 +354,7 @@ async function saveConfig(){
     content_limit:parseInt(document.getElementById('cfg-limit').value)||10
     ,separate_cover:document.getElementById('cfg-separate-cover').checked
     ,video_format:document.getElementById('cfg-video-format').value
+    ,video_formats:videoFormats
   });
 }
 async function telethonRequestCode(){const phone=document.getElementById('telethon-phone').value.trim();if(!phone){addLog('err','请输入手机号');return}await api('/api/telethon/request-code','POST',{phone});}
