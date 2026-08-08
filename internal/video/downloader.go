@@ -1,6 +1,7 @@
 package video
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"log"
@@ -8,17 +9,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Downloader converts m3u8 to mp4 via ffmpeg.
 type Downloader struct {
-	WorkDir string
-	Timeout int // optional seconds per download; zero means full duration
+	WorkDir        string
+	Timeout        int           // optional media seconds per download; zero means full duration
+	RuntimeTimeout time.Duration // wall-clock cap for the ffmpeg process
 }
 
 func New(workDir string) *Downloader {
 	os.MkdirAll(workDir, 0755)
-	return &Downloader{WorkDir: workDir, Timeout: 0}
+	return &Downloader{WorkDir: workDir, Timeout: 0, RuntimeTimeout: 6 * time.Hour}
 }
 
 // HasComplete reports whether a fully finalized file can be resumed for upload.
@@ -61,12 +64,21 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		args = append(args[:len(args)-1], "-t", fmt.Sprintf("%d", d.Timeout), args[len(args)-1])
 	}
 
-	cmd := exec.Command("ffmpeg", args...)
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if d.RuntimeTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, d.RuntimeTimeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stderr = nil
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Clean up partial file
 		os.Remove(tmpPath)
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("ffmpeg timed out after %s", d.RuntimeTimeout)
+		}
 		return "", fmt.Errorf("ffmpeg: %v: %s", err, string(output))
 	}
 
