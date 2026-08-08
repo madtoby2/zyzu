@@ -25,6 +25,14 @@ type Station struct {
 	FirstSeen     time.Time `json:"first_seen"`
 	LastSeen      time.Time `json:"last_seen"`
 	LastPosted    string    `json:"last_posted"`
+
+	HealthScore           int        `json:"health_score"`
+	HealthLabel           string     `json:"health_label"`
+	DownloadCooldown      bool       `json:"download_cooldown"`
+	DownloadFailCount     int        `json:"download_fail_count"`
+	LastDownloadError     string     `json:"last_download_error,omitempty"`
+	LastDownloadFailedAt  *time.Time `json:"last_download_failed_at,omitempty"`
+	LastDownloadFailureID string     `json:"-"`
 }
 
 type PostLog struct {
@@ -62,6 +70,14 @@ type ScheduledMessage struct {
 
 type Store struct {
 	db *sql.DB
+}
+
+type SourceFailure struct {
+	SourceKey  string    `json:"source_key"`
+	SourceName string    `json:"source_name"`
+	FailedAt   time.Time `json:"failed_at"`
+	FailCount  int       `json:"fail_count"`
+	LastError  string    `json:"last_error"`
 }
 
 func New(path string) (*Store, error) {
@@ -403,6 +419,24 @@ func (s *Store) ClearSourceFailure(sourceKey string) error {
 	}
 	_, err := s.db.Exec("DELETE FROM content_source_failures WHERE source_key=?", sourceKey)
 	return err
+}
+
+func (s *Store) GetSourceFailures() (map[string]SourceFailure, error) {
+	rows, err := s.db.Query(`SELECT source_key, source_name, failed_at, fail_count, last_error
+		FROM content_source_failures`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	failures := make(map[string]SourceFailure)
+	for rows.Next() {
+		var failure SourceFailure
+		if err := rows.Scan(&failure.SourceKey, &failure.SourceName, &failure.FailedAt, &failure.FailCount, &failure.LastError); err != nil {
+			return nil, err
+		}
+		failures[strings.TrimRight(strings.ToLower(strings.TrimSpace(failure.SourceKey)), "/")] = failure
+	}
+	return failures, rows.Err()
 }
 
 func (s *Store) LogEvent(level, message string) error {

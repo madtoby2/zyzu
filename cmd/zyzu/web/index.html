@@ -23,16 +23,18 @@ body{background:linear-gradient(135deg,#24102f 0%,#5b174f 52%,#b52f72 100%);colo
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1a1a2a}
 .topbar h1{font-size:18px;color:#ec4899}.topbar .server{font-size:11px;color:#444}
 .topbar button{background:none;border:1px solid #333;color:#666;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 .card{background:#1b1b2b;border:1px solid #34344a;border-radius:10px;padding:16px;text-align:left;box-shadow:0 2px 8px #09091255}
 .card .n{font-size:26px;font-weight:700}
 .card .l{font-size:11px;color:#a4a7b5;margin-top:2px}
+.job-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:16px}.job-card{background:#151522;border:1px solid #34344a;border-radius:10px;padding:12px}.job-card h4{font-size:12px;color:#f0abfc;margin-bottom:7px}.job-card .state{font-size:12px;color:#e5e7eb;line-height:1.5}.job-card .meta{font-size:11px;color:#888;margin-top:7px}
 .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
  .toolbar input{flex:1;min-width:140px;padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
 .toolbar input:focus{outline:none;border-color:#ec4899}
 .toolbar select{padding:7px 10px;background:#0f0f1b;border:1px solid #39394d;border-radius:7px;color:#e5e7eb;font-size:13px}
 .pagination{display:flex;justify-content:center;align-items:center;gap:10px;padding:14px 0;color:#a4a7b5;font-size:12px}.pagination button{min-width:72px}
 .category-badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#38204f;border:1px solid #a855f7;color:#f0abfc;font-size:11px;font-weight:600;white-space:nowrap}
+.health-badge{display:inline-block;min-width:54px;text-align:center;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:700}.health-good{background:#064e3b;color:#a7f3d0}.health-ok{background:#1e3a8a;color:#bfdbfe}.health-watch{background:#78350f;color:#fde68a}.health-bad{background:#7f1d1d;color:#fecaca}
 .btn{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
 .btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
 .btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
@@ -61,7 +63,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 .log-box .ts{color:#444}.log-box .ok{color:#10b981}.log-box .err{color:#ef4444}.log-box .info{color:#888}
 .log-box .warn{color:#f59e0b}.toast{position:fixed;right:24px;top:24px;z-index:20;min-width:260px;max-width:420px;padding:12px 16px;border-radius:9px;color:#fff;box-shadow:0 8px 28px #090912aa;font-size:13px}.toast.err{background:#b42318}.toast.warn{background:#b54708}.toast.ok{background:#087443}.toast.info{background:#3730a3}
 .hidden{display:none}
-@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -87,7 +89,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <div class="card"><div class="n" id="s-blocked">-</div><div class="l">已屏蔽</div></div>
     <div class="card"><div class="n" id="s-posted">-</div><div class="l">已推送</div></div>
     <div class="card"><div class="n" id="s-running">-</div><div class="l">调度状态</div></div>
+    <div class="card"><div class="n" id="s-disk">-</div><div class="l">磁盘剩余</div></div>
   </div>
+  <div class="job-board" id="channel-job-board"></div>
   <div class="toolbar">
     <input id="search" placeholder="搜索资源站名称或 API..." oninput="stationPage=1;render()">
     <select id="station-category-filter" onchange="render()"><option value="">全部分类</option></select>
@@ -103,7 +107,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <button class="tab" onclick="switchTab('config')">配置</button>
     <button class="tab" onclick="switchTab('log')">日志</button>
   </div>
-  <div id="tab-stations"><table><thead><tr><th>名称</th><th>分类</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table><div class="pagination"><button class="btn btn-o" onclick="changeStationPage(-1)">上一页</button><span id="station-page-info">第 1 页</span><button class="btn btn-o" onclick="changeStationPage(1)">下一页</button></div></div>
+  <div id="tab-stations"><table><thead><tr><th>名称</th><th>分类</th><th>健康</th><th>资源量</th><th>可用率</th><th>响应</th><th>操作</th></tr></thead><tbody id="station-list"></tbody></table><div class="pagination"><button class="btn btn-o" onclick="changeStationPage(-1)">上一页</button><span id="station-page-info">第 1 页</span><button class="btn btn-o" onclick="changeStationPage(1)">下一页</button></div></div>
   <div id="tab-channels" class="hidden">
     <div class="config-form">
       <label>添加频道（分类）<select id="channel-category"><option value="成人">成人</option><option value="综合影视">综合影视</option><option value="电影">电影</option><option value="电视剧">电视剧</option><option value="动漫">动漫</option><option value="综艺">综艺</option><option value="纪录片">纪录片</option></select></label>
@@ -215,18 +219,31 @@ function showErr(m){const e=document.getElementById('login-err');e.textContent=m
 async function loadStats(){
   if(!server)return;
   try{const r=await fetch(server+'/api/stations/stats').then(r=>r.json());if(r.ok){document.getElementById('s-total').textContent=r.data.total;document.getElementById('s-blocked').textContent=r.data.blacklisted;document.getElementById('s-posted').textContent=r.data.posted}
-  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok){const state=s.data.content_running?'下载/上传中':s.data.scrape_running?'采集中':'空闲';document.getElementById('s-running').textContent=state;channelJobs=s.data.channel_jobs||{};renderChannelCards();const modal=document.getElementById('channel-detail-modal'),current=document.getElementById('channel-current-job');if(current&&!modal.classList.contains('hidden'))current.textContent=channelJobText(modal.dataset.category)}}catch(e){}
+  const s=await fetch(server+'/api/status').then(r=>r.json());if(s.ok){const state=s.data.content_running?'下载/上传中':s.data.scrape_running?'采集中':'空闲';document.getElementById('s-running').textContent=state;const disk=s.data.disk||{};const diskEl=document.getElementById('s-disk');if(diskEl){diskEl.textContent=disk.ok?`${Number(disk.available_gb||0).toFixed(1)}G`:'-';diskEl.className='n '+(disk.low_space?'red':'')}if(disk.ok&&disk.low_space)addLog('warn',`磁盘剩余 ${Number(disk.available_gb||0).toFixed(1)}G，建议暂停大文件下载`,false);channelJobs=s.data.channel_jobs||{};renderChannelCards();renderChannelJobBoard();const modal=document.getElementById('channel-detail-modal'),current=document.getElementById('channel-current-job');if(current&&!modal.classList.contains('hidden'))current.textContent=channelJobText(modal.dataset.category)}}catch(e){}
 }
 async function loadStations(){
-  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories();refreshStationCategoryFilter()}catch(e){}
+  try{const r=await fetch(server+'/api/stations?all=1').then(r=>r.json());if(r.ok)stations=r.data;refreshChannelCategories();refreshStationCategoryFilter();renderChannelJobBoard()}catch(e){}
 }
 async function loadConfig(){
   try{const r=await fetch(server+'/api/config',{headers:{'X-API-Key':key}}).then(r=>r.json());
   if(r.ok&&r.data){const c=r.data;document.getElementById('cfg-token').value=c.bot_token||'';document.getElementById('cfg-scrape').value=c.scrape_cron||'';document.getElementById('cfg-content-cron').value=c.content_cron||'';document.getElementById('cfg-mode').value=c.content_mode||'video';document.getElementById('cfg-limit').value=c.content_limit||10;document.getElementById('cfg-video-format').value=c.video_format||'[资源码] {code}\n{title}\n分类：{category}\n来源：{source}';document.getElementById('cfg-separate-cover').checked=c.separate_cover!==false;videoFormats=c.video_formats||{};
-  if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};channelIntervals=c.channel_intervals||{};refreshChannelCategories();renderChannelCards()}}catch(e){}
+  if(c.channel_map)channelMap=c.channel_map;else if(c.channel_ids)channelMap={default:c.channel_ids};else channelMap={};channelIntervals=c.channel_intervals||{};refreshChannelCategories();renderChannelCards();renderChannelJobBoard()}}catch(e){}
  }
 function defaultChannelInterval(category){if(['成人','adult','AV','av'].includes(category))return 15;if(['电视剧','电视','tv'].includes(category))return 30;if(['电影','movie'].includes(category))return 60;return 30}
 function channelJobText(category){const j=channelJobs[category];if(!j)return '等待调度';const labels={queued:'等待处理',downloading:'正在下载',uploading:'正在上传',retrying:'正在换源',completed:'最近完成',failed:'本轮失败'};const size=j.size_mb?` · ${Number(j.size_mb).toFixed(0)}MB`:'';return `${labels[j.state]||j.state}《${j.title||'未知资源'}》 · ${j.source||'未知来源'}${size}`}
+function renderChannelJobBoard(){
+  const el=document.getElementById('channel-job-board');if(!el)return;
+  const cats=Object.keys(channelMap||{});
+  if(!cats.length){el.innerHTML='';return}
+  el.innerHTML=cats.map(cat=>{
+    const j=channelJobs[cat]||{};
+    const state=j.state||'idle';
+    const cls=state==='failed'?'red':(state==='completed'?'green':'');
+    const ids=(channelMap[cat]||[]).length;
+    const bound=stations.filter(s=>(s.category||'综合影视')===cat).length;
+    return `<div class="job-card"><h4>${esc(cat)} · ${ids} 个频道</h4><div class="state ${cls}">${esc(channelJobText(cat))}</div><div class="meta">绑定资源站 ${bound} 个 · 每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查</div></div>`;
+  }).join('');
+}
 function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
 function refreshStationCategoryFilter(){const el=document.getElementById('station-category-filter');if(!el)return;const current=el.value;const values=stations.map(s=>s.category||'未分类').filter(Boolean);const unique=[...new Set(values)];el.innerHTML='<option value="">全部分类</option>'+unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}
 function renderChannelCards(){const el=document.getElementById('channel-cards');if(!el)return;const rows=Object.entries(channelMap||{}).flatMap(([cat,ids])=>(ids||[]).map(id=>`<div class="channel-card" onclick="openChannelDetail('${encodeURIComponent(String(cat))}','${encodeURIComponent(String(id))}')"><h4>${esc(cat)}</h4><div class="channel-id">${esc(String(id))}</div><div style="margin-top:10px;color:#f2d8ff;line-height:1.5">${esc(channelJobText(cat))}</div><small style="display:block;color:#aaa;margin-top:8px">每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查 · 点击设置</small></div>`));el.innerHTML=rows.length?rows.join(''):'<div class="channel-card" style="cursor:default">暂无频道，请添加</div>'}
@@ -264,6 +281,9 @@ function videoVariablesFor(category){
 function variableButtons(category){
   return videoVariablesFor(category).map(v=>`<button class="btn btn-o" type="button" onclick="insertVideoVariable('${v[0]}')" title="${esc(v[1])}">${esc(v[0])}</button>`).join('');
 }
+function escAttr(s){return esc(s).replace(/"/g,'&quot;')}
+function healthClass(score){score=Number(score||0);if(score>=85)return'health-good';if(score>=65)return'health-ok';if(score>=40)return'health-watch';return'health-bad'}
+function healthText(s){const score=Number(s.health_score||0);const label=s.health_label||'未知';return `${label} ${score}${s.download_cooldown?' · 冷却中':''}`}
 function insertVideoVariable(token){
   const el=document.getElementById('channel-video-format');if(!el)return;
   const start=el.selectionStart||0,end=el.selectionEnd||0;
@@ -313,7 +333,8 @@ function render(){
   document.getElementById('station-list').innerHTML=pageItems.map(s=>{
     const slug=encodeURIComponent(s.slug);
     const category=esc(s.category||'未分类');
-    return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${esc(s.api_url||'').substring(0,45)}</small></td><td><span class="category-badge">${category}</span></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
+    const healthTip=s.last_download_error?` title="${escAttr(s.last_download_error)}"`:'';
+    return `<tr class="${s.blacklisted?'blocked':''}"><td><b>${esc(s.name)}</b><br><small>${esc(s.api_url||'').substring(0,45)}</small></td><td><span class="category-badge">${category}</span></td><td><span class="health-badge ${healthClass(s.health_score)}"${healthTip}>${esc(healthText(s))}</span></td><td>${s.resource_count||'-'}条</td><td class="${parseFloat(s.availability)>=50?'green':'red'}">${s.availability||'-'}</td><td>${s.response_time||'-'}</td><td><button class="btn btn-o" onclick="api('/api/stations/${slug}/post','POST')">推送</button> <button class="btn btn-o" onclick="probeStation('${slug}')">测活</button> <button class="btn btn-o" onclick="editCategory('${slug}')">分类</button> <button class="btn ${s.blacklisted?'btn-g':'btn-r'}" onclick="api('/api/stations/${slug}/blacklist','POST',{blacklisted:!s.blacklisted})">${s.blacklisted?'解除':'屏蔽'}</button></td></tr>`;
   }).join('');
 }
 function changeStationPage(delta){stationPage+=delta;render()}

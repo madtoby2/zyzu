@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -452,6 +453,7 @@ func (h *Handler) getStations(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), 500)
 		return
 	}
+	h.enrichStationHealth(stations)
 	jsonOK(w, stations)
 }
 
@@ -699,7 +701,110 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	status := h.sched.Status()
+	status["disk"] = diskStatus(".")
 	jsonOK(w, status)
+}
+
+func (h *Handler) enrichStationHealth(stations []store.Station) {
+	failures, err := h.store.GetSourceFailures()
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	for i := range stations {
+		st := &stations[i]
+		score := 100
+		if st.Blacklisted {
+			score = 0
+		}
+		if st.Availability == "0%" {
+			score -= 45
+		} else if availability := parsePercent(st.Availability); availability > 0 && availability < 80 {
+			score -= 20
+		}
+		if count := parseLeadingInt(st.ResourceCount); count == 0 {
+			score -= 15
+		}
+		if response := parseResponseMillis(st.ResponseTime); response > 3000 {
+			score -= 15
+		}
+		key := strings.TrimRight(strings.ToLower(strings.TrimSpace(st.APIURL)), "/")
+		if failure, ok := failures[key]; ok {
+			st.DownloadFailCount = failure.FailCount
+			st.LastDownloadError = failure.LastError
+			st.LastDownloadFailedAt = &failure.FailedAt
+			st.LastDownloadFailureID = failure.SourceKey
+			if now.Sub(failure.FailedAt) < 6*time.Hour {
+				st.DownloadCooldown = true
+				score -= 35
+			} else {
+				score -= 15
+			}
+		}
+		if score < 0 {
+			score = 0
+		}
+		st.HealthScore = score
+		switch {
+		case score >= 85:
+			st.HealthLabel = "优秀"
+		case score >= 65:
+			st.HealthLabel = "可用"
+		case score >= 40:
+			st.HealthLabel = "观察"
+		default:
+			st.HealthLabel = "异常"
+		}
+	}
+}
+
+func parsePercent(value string) int {
+	value = strings.TrimSpace(strings.TrimSuffix(value, "%"))
+	n, _ := strconv.Atoi(value)
+	return n
+}
+
+func parseLeadingInt(value string) int {
+	value = strings.TrimSpace(value)
+	var digits strings.Builder
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			break
+		}
+		digits.WriteRune(r)
+	}
+	n, _ := strconv.Atoi(digits.String())
+	return n
+}
+
+func parseResponseMillis(value string) int {
+	value = strings.TrimSpace(strings.TrimSuffix(value, "ms"))
+	n, _ := strconv.Atoi(value)
+	return n
+}
+
+func diskStatus(path string) map[string]interface{} {
+	out, err := exec.Command("df", "-Pk", path).Output()
+	if err != nil {
+		return map[string]interface{}{"ok": false, "error": err.Error()}
+	}
+	lines := strings.Fields(string(out))
+	if len(lines) < 12 {
+		return map[string]interface{}{"ok": false, "error": "unexpected df output"}
+	}
+	totalKB, _ := strconv.ParseInt(lines[7], 10, 64)
+	usedKB, _ := strconv.ParseInt(lines[8], 10, 64)
+	availKB, _ := strconv.ParseInt(lines[9], 10, 64)
+	usedPct := strings.TrimSuffix(lines[10], "%")
+	usedPercent, _ := strconv.Atoi(usedPct)
+	return map[string]interface{}{
+		"ok":           true,
+		"total_gb":     float64(totalKB) / 1024 / 1024,
+		"used_gb":      float64(usedKB) / 1024 / 1024,
+		"available_gb": float64(availKB) / 1024 / 1024,
+		"used_percent": usedPercent,
+		"low_space":    availKB < 8*1024*1024,
+	}
 }
 
 func jsonOK(w http.ResponseWriter, data interface{}) {
