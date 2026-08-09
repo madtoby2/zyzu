@@ -79,6 +79,13 @@ type ContentPreview struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type episodeCandidate struct {
+	Name         string
+	URLs         []string
+	FirstIndex   int
+	LogicalIndex int
+}
+
 func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Config) *Scheduler {
 	workDir := "videos"
 	if d := os.Getenv("ZYZU_VIDEO_DIR"); d != "" {
@@ -696,36 +703,21 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		policy := s.Cfg.ChannelPolicy(category)
 		seriesMode := policy.AllowSeries && shouldPostSeriesEpisodes(category, item)
 		seriesPosted := 0
-		seenEpisodes := make(map[string]bool)
-		logicalIndex := 0
-		episodeTotal := uniqueEpisodeCount(item.Episodes)
-		for index, episode := range item.Episodes {
+		candidates := episodeCandidates(item.Episodes, seriesMode)
+		for _, candidate := range candidates {
 			if seriesMode && policy.PerSeriesLimit > 0 && seriesPosted >= policy.PerSeriesLimit {
 				break
 			}
-			episodeName, episodeURL, ok := splitEpisode(episode)
-			if !ok {
-				continue
-			}
-			episodeID := episodeIdentity(episodeName, index)
-			if seriesMode {
-				if seenEpisodes[episodeID] {
-					log.Printf("[video] skip duplicate episode line %s (%s): alternate player/source", item.Title, episodeName)
-					continue
-				}
-				seenEpisodes[episodeID] = true
-			}
-			logicalIndex++
 			episodeItem := item
-			episodeItem.EpisodeName = episodeName
-			episodeItem.EpisodeIndex = logicalIndex
-			episodeItem.EpisodeTotal = episodeTotal
+			episodeItem.EpisodeName = candidate.Name
+			episodeItem.EpisodeIndex = candidate.LogicalIndex
+			episodeItem.EpisodeTotal = len(candidates)
 			episodeKey := content.DedupKey(item)
 			if seriesMode {
-				episodeKey = episodeDedupKey(item, episodeName, index)
+				episodeKey = episodeDedupKey(item, candidate.Name, candidate.FirstIndex)
 				postedBefore, checkErr := s.Store.HasContentPosted(episodeKey)
 				if checkErr != nil {
-					log.Printf("[video] episode dedup check %s (%s): %v", item.Title, episodeName, checkErr)
+					log.Printf("[video] episode dedup check %s (%s): %v", item.Title, candidate.Name, checkErr)
 					continue
 				}
 				if postedBefore {
@@ -737,9 +729,16 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 				continue
 			}
 			s.setChannelJob(category, "downloading", episodeItem, 0)
-			filePath, err := s.Video.Download(episodeURL, videoFileName(episodeItem))
+			var filePath string
+			var err error
+			for _, episodeURL := range candidate.URLs {
+				filePath, err = s.Video.Download(episodeURL, videoFileName(episodeItem))
+				if err == nil {
+					break
+				}
+				log.Printf("[video] download %s (%s): %v", item.Title, candidate.Name, err)
+			}
 			if err != nil {
-				log.Printf("[video] download %s (%s): %v", item.Title, episodeName, err)
 				if !seriesMode {
 					s.setChannelJob(category, "retrying", item, 0)
 					_ = s.Store.LogContentFailure(content.DedupKey(item))
@@ -755,7 +754,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), episodeItem, category)
 			_, err = s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
 			if err != nil {
-				log.Printf("[video] upload %s (%s): %v", item.Title, episodeName, err)
+				log.Printf("[video] upload %s (%s): %v", item.Title, candidate.Name, err)
 				if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
 					log.Printf("[video] cleanup failed upload %s: %v", filePath, removeErr)
 				} else {
@@ -779,10 +778,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			seriesPosted++
 			_ = s.Store.ClearSourceFailure(sourceKey)
 			if err := s.Store.LogContentPost(episodeKey); err != nil {
-				log.Printf("[content] record %s (%s): %v", item.Title, episodeName, err)
+				log.Printf("[content] record %s (%s): %v", item.Title, candidate.Name, err)
 			}
 			s.setChannelJob(category, "completed", episodeItem, uploadedSize)
-			log.Printf("[video] posted: %s (%s, category=%s, %.0fMB)", item.Title, episodeName, category, float64(uploadedSize)/1024/1024)
+			log.Printf("[video] posted: %s (%s, category=%s, %.0fMB)", item.Title, candidate.Name, category, float64(uploadedSize)/1024/1024)
 			time.Sleep(3 * time.Second) // TG rate limit for large uploads
 			if !seriesMode {
 				break
@@ -793,18 +792,8 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 }
 
 func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {
-	seenEpisodes := make(map[string]bool)
-	for index, episode := range item.Episodes {
-		name, _, ok := splitEpisode(episode)
-		if !ok {
-			continue
-		}
-		episodeID := episodeIdentity(name, index)
-		if seenEpisodes[episodeID] {
-			continue
-		}
-		seenEpisodes[episodeID] = true
-		posted, err := s.Store.HasContentPosted(episodeDedupKey(item, name, index))
+	for _, candidate := range episodeCandidates(item.Episodes, true) {
+		posted, err := s.Store.HasContentPosted(episodeDedupKey(item, candidate.Name, candidate.FirstIndex))
 		if err != nil {
 			return false, err
 		}
@@ -813,6 +802,32 @@ func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func episodeCandidates(episodes []string, collapseAlternates bool) []episodeCandidate {
+	candidates := make([]episodeCandidate, 0, len(episodes))
+	byID := make(map[string]int)
+	for index, episode := range episodes {
+		name, episodeURL, ok := splitEpisode(episode)
+		if !ok {
+			continue
+		}
+		id := episodeIdentity(name, index)
+		if collapseAlternates {
+			if existing, ok := byID[id]; ok {
+				candidates[existing].URLs = append(candidates[existing].URLs, episodeURL)
+				continue
+			}
+			byID[id] = len(candidates)
+		}
+		candidates = append(candidates, episodeCandidate{
+			Name:         name,
+			URLs:         []string{episodeURL},
+			FirstIndex:   index,
+			LogicalIndex: len(candidates) + 1,
+		})
+	}
+	return candidates
 }
 
 func splitEpisode(raw string) (name, url string, ok bool) {
@@ -843,21 +858,7 @@ func episodeIdentity(episodeName string, index int) string {
 }
 
 func uniqueEpisodeCount(episodes []string) int {
-	seen := make(map[string]bool)
-	count := 0
-	for index, episode := range episodes {
-		name, _, ok := splitEpisode(episode)
-		if !ok {
-			continue
-		}
-		id := episodeIdentity(name, index)
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		count++
-	}
-	return count
+	return len(episodeCandidates(episodes, true))
 }
 
 func shouldPostSeriesEpisodes(routeCategory string, item content.ContentItem) bool {

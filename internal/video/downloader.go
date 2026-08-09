@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -33,6 +36,11 @@ func (d *Downloader) HasComplete(filename string) bool {
 
 // Download converts an m3u8 URL to an mp4 file. Returns the local file path.
 func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
+	resolvedURL, resolveErr := resolvePlayableURL(m3u8URL)
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	m3u8URL = resolvedURL
 	// Sanitize filename
 	filename = sanitize(filename)
 	// Use a new cache namespace so files created by the former 120s cap are
@@ -98,6 +106,55 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	}
 	log.Printf("[video] downloaded %s -> %s (%.1fMB)", logURL, filename, float64(info.Size())/1024/1024)
 	return outPath, nil
+}
+
+func resolvePlayableURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("empty media url")
+	}
+	lower := strings.ToLower(raw)
+	if strings.Contains(lower, ".m3u8") || strings.Contains(lower, ".mp4") {
+		return raw, nil
+	}
+	req, err := http.NewRequest("GET", raw, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("resolve playable url: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("resolve playable url: HTTP %d", resp.StatusCode)
+	}
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.Contains(ct, "mpegurl") || strings.Contains(ct, "mp4") {
+		return resp.Request.URL.String(), nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
+	if err != nil {
+		return "", err
+	}
+	text := string(body)
+	for _, re := range []*regexp.Regexp{
+		regexp.MustCompile(`(?i)"url"\s*:\s*"([^"]+\.(?:m3u8|mp4)(?:\?[^"]*)?)"`),
+		regexp.MustCompile(`(?i)var\s+main\s*=\s*"([^"]+\.(?:m3u8|mp4)(?:\?[^"]*)?)"`),
+		regexp.MustCompile(`(?i)var\s+mp4\s*=\s*"([^"]+\.mp4(?:\?[^"]*)?)"`),
+		regexp.MustCompile(`(?i)(https?://[^'"<>\\\s]+\.(?:m3u8|mp4)(?:\?[^'"<>\\\s]*)?)`),
+		regexp.MustCompile(`(?i)(/[^'"<>\\\s]+\.(?:m3u8|mp4)(?:\?[^'"<>\\\s]*)?)`),
+	} {
+		if match := re.FindStringSubmatch(text); len(match) > 1 {
+			resolved, err := resp.Request.URL.Parse(strings.ReplaceAll(match[1], `\/`, `/`))
+			if err == nil {
+				return resolved.String(), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("resolved page is not a direct playable media url: %s", raw)
 }
 
 // Cleanup removes files older than maxAge.

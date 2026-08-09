@@ -224,6 +224,24 @@ func TestUniqueEpisodeCountCollapsesPlayerGroups(t *testing.T) {
 	}
 }
 
+func TestEpisodeCandidatesKeepAlternateURLsForSameEpisode(t *testing.T) {
+	episodes := []string{
+		"第01集$https://one.test/1.m3u8",
+		"第02集$https://one.test/2.m3u8",
+		"第01集$https://two.test/1.m3u8",
+	}
+	got := episodeCandidates(episodes, true)
+	if len(got) != 2 {
+		t.Fatalf("episodeCandidates() len = %d, want 2", len(got))
+	}
+	if got[0].Name != "第01集" || len(got[0].URLs) != 2 {
+		t.Fatalf("first candidate = %#v, want 第01集 with two alternate urls", got[0])
+	}
+	if got[1].Name != "第02集" || len(got[1].URLs) != 1 {
+		t.Fatalf("second candidate = %#v, want 第02集 with one url", got[1])
+	}
+}
+
 func TestEpisodeCaptionVariables(t *testing.T) {
 	item := content.ContentItem{
 		Title:        "测试剧",
