@@ -199,6 +199,31 @@ func TestShouldPostSeriesEpisodesOnlyForSeriesCategories(t *testing.T) {
 	}
 }
 
+func TestEpisodeDedupKeyIgnoresAlternatePlayerURL(t *testing.T) {
+	item := content.ContentItem{Title: "测试剧", SourceURL: "https://source.test/api", VodID: 100}
+	first := episodeDedupKey(item, "第01集", 0)
+	alternate := episodeDedupKey(item, "第01集", 40)
+	if first != alternate {
+		t.Fatal("same episode name from another player/source should share one dedup key")
+	}
+	second := episodeDedupKey(item, "第02集", 1)
+	if first == second {
+		t.Fatal("different episodes should not share a dedup key")
+	}
+}
+
+func TestUniqueEpisodeCountCollapsesPlayerGroups(t *testing.T) {
+	episodes := []string{
+		"第01集$https://one.test/1.m3u8",
+		"第02集$https://one.test/2.m3u8",
+		"第01集$https://two.test/1.m3u8",
+		"第02集$https://two.test/2.m3u8",
+	}
+	if got, want := uniqueEpisodeCount(episodes), 2; got != want {
+		t.Fatalf("uniqueEpisodeCount() = %d, want %d", got, want)
+	}
+}
+
 func TestEpisodeCaptionVariables(t *testing.T) {
 	item := content.ContentItem{
 		Title:        "测试剧",

@@ -696,6 +696,9 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		policy := s.Cfg.ChannelPolicy(category)
 		seriesMode := policy.AllowSeries && shouldPostSeriesEpisodes(category, item)
 		seriesPosted := 0
+		seenEpisodes := make(map[string]bool)
+		logicalIndex := 0
+		episodeTotal := uniqueEpisodeCount(item.Episodes)
 		for index, episode := range item.Episodes {
 			if seriesMode && policy.PerSeriesLimit > 0 && seriesPosted >= policy.PerSeriesLimit {
 				break
@@ -704,13 +707,22 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			if !ok {
 				continue
 			}
+			episodeID := episodeIdentity(episodeName, index)
+			if seriesMode {
+				if seenEpisodes[episodeID] {
+					log.Printf("[video] skip duplicate episode line %s (%s): alternate player/source", item.Title, episodeName)
+					continue
+				}
+				seenEpisodes[episodeID] = true
+			}
+			logicalIndex++
 			episodeItem := item
 			episodeItem.EpisodeName = episodeName
-			episodeItem.EpisodeIndex = index + 1
-			episodeItem.EpisodeTotal = len(item.Episodes)
+			episodeItem.EpisodeIndex = logicalIndex
+			episodeItem.EpisodeTotal = episodeTotal
 			episodeKey := content.DedupKey(item)
 			if seriesMode {
-				episodeKey = episodeDedupKey(item, episodeName, episodeURL, index)
+				episodeKey = episodeDedupKey(item, episodeName, index)
 				postedBefore, checkErr := s.Store.HasContentPosted(episodeKey)
 				if checkErr != nil {
 					log.Printf("[video] episode dedup check %s (%s): %v", item.Title, episodeName, checkErr)
@@ -781,12 +793,18 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 }
 
 func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {
+	seenEpisodes := make(map[string]bool)
 	for index, episode := range item.Episodes {
-		name, url, ok := splitEpisode(episode)
+		name, _, ok := splitEpisode(episode)
 		if !ok {
 			continue
 		}
-		posted, err := s.Store.HasContentPosted(episodeDedupKey(item, name, url, index))
+		episodeID := episodeIdentity(name, index)
+		if seenEpisodes[episodeID] {
+			continue
+		}
+		seenEpisodes[episodeID] = true
+		posted, err := s.Store.HasContentPosted(episodeDedupKey(item, name, index))
 		if err != nil {
 			return false, err
 		}
@@ -810,10 +828,36 @@ func splitEpisode(raw string) (name, url string, ok bool) {
 	return name, url, url != ""
 }
 
-func episodeDedupKey(item content.ContentItem, episodeName, episodeURL string, index int) string {
-	raw := fmt.Sprintf("%s\x00episode:%d\x00%s\x00%s", content.DedupKey(item), index+1, strings.TrimSpace(episodeName), strings.TrimSpace(episodeURL))
+func episodeDedupKey(item content.ContentItem, episodeName string, index int) string {
+	raw := fmt.Sprintf("%s\x00episode:%s", content.DedupKey(item), episodeIdentity(episodeName, index))
 	sum := sha256.Sum256([]byte(raw))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func episodeIdentity(episodeName string, index int) string {
+	name := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(episodeName)), ""))
+	if name == "" {
+		return fmt.Sprintf("index:%d", index+1)
+	}
+	return "name:" + name
+}
+
+func uniqueEpisodeCount(episodes []string) int {
+	seen := make(map[string]bool)
+	count := 0
+	for index, episode := range episodes {
+		name, _, ok := splitEpisode(episode)
+		if !ok {
+			continue
+		}
+		id := episodeIdentity(name, index)
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		count++
+	}
+	return count
 }
 
 func shouldPostSeriesEpisodes(routeCategory string, item content.ContentItem) bool {
