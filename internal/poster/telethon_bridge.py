@@ -187,20 +187,12 @@ async def main():
         cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')
         if (req.get('embed_cover') or req.get('album_cover')) and cover_path and os.path.isfile(cover_path):
-            try:
-                thumb_path = cover_thumbnail(cover_path)
-                print(
-                    f"[cover] resource poster prepared as video thumbnail: {thumb_path}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            except Exception as exc:
-                print(
-                    f"[cover] resource poster thumbnail failed; "
-                    f"using captured video frame: {exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+            print(
+                f"[cover] using resource poster as native video cover; "
+                f"keeping captured video frame as preview: {thumb_path or 'none'}",
+                file=sys.stderr,
+                flush=True,
+            )
             try:
                 video_msg = await send_video_with_cover(
                     client,
