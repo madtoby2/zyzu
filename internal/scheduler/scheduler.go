@@ -1,11 +1,13 @@
 package scheduler
 
 import (
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1009,7 +1011,11 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 	if item.VodID > 0 {
 		code = fmt.Sprintf("%d", item.VodID)
 	}
-	return strings.NewReplacer(
+	rating := strings.TrimSpace(item.Score)
+	if rating == "" {
+		rating = randomScore()
+	}
+	caption := strings.NewReplacer(
 		"{code}", code,
 		"{id}", code,
 		"{title}", escapeHTML(item.Title),
@@ -1030,6 +1036,9 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{language}", escapeHTML(item.Language),
 		"{year}", escapeHTML(item.Year),
 		"{score}", escapeHTML(item.Score),
+		"{rating}", escapeHTML(rating),
+		"{random_score}", escapeHTML(randomScore()),
+		"{emoji}", escapeHTML(randomEmoji()),
 		"{duration}", escapeHTML(item.Duration),
 		"{remarks}", escapeHTML(item.Remarks),
 		"{source}", escapeHTML(item.Source),
@@ -1039,6 +1048,61 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{cover_url}", escapeHTML(item.CoverURL),
 		"{updated_at}", escapeHTML(item.VodTime),
 	).Replace(format)
+	return replaceRandomTokens(caption)
+}
+
+func replaceRandomTokens(value string) string {
+	value = strings.ReplaceAll(value, "{random}", randomString(6))
+	for {
+		start := strings.Index(value, "{random:")
+		if start < 0 {
+			return value
+		}
+		end := strings.Index(value[start:], "}")
+		if end < 0 {
+			return value
+		}
+		token := value[start : start+end+1]
+		rawLen := strings.TrimSuffix(strings.TrimPrefix(token, "{random:"), "}")
+		n, err := strconv.Atoi(rawLen)
+		if err != nil || n <= 0 {
+			n = 6
+		}
+		if n > 32 {
+			n = 32
+		}
+		value = strings.Replace(value, token, randomString(n), 1)
+	}
+}
+
+func randomString(n int) string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	buf := make([]byte, n)
+	if _, err := cryptorand.Read(buf); err != nil {
+		for i := range buf {
+			buf[i] = byte(time.Now().UnixNano() >> (i % 8))
+		}
+	}
+	var b strings.Builder
+	for _, value := range buf {
+		b.WriteByte(alphabet[int(value)%len(alphabet)])
+	}
+	return b.String()
+}
+
+func randomScore() string {
+	seed := time.Now().UnixNano()
+	major := 7 + seed%3
+	minor := (seed / 10) % 10
+	if major == 9 && minor > 8 {
+		minor = 8
+	}
+	return fmt.Sprintf("%d.%d", major, minor)
+}
+
+func randomEmoji() string {
+	emojis := []string{"🎬", "🔥", "✨", "⭐", "📺", "🍿", "🎞️", "💫"}
+	return emojis[int(time.Now().UnixNano()%int64(len(emojis)))]
 }
 
 func contentTags(item content.ContentItem, routeCategory string) string {

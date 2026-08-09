@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -208,5 +210,23 @@ func TestEpisodeCaptionVariables(t *testing.T) {
 	want := "测试剧 · 第02集\n进度：第 2 / 24 集"
 	if got := formatVideoCaption(format, item, "电视剧"); got != want {
 		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatVideoCaptionRandomAndRatingVariables(t *testing.T) {
+	item := content.ContentItem{Title: "测试影片", Score: "8.6"}
+	got := formatVideoCaption("评分：{rating}/{score}\n随机：{random}/{random:8}\n图标：{emoji}", item, "电影")
+	if !strings.Contains(got, "评分：8.6/8.6") {
+		t.Fatalf("rating should prefer real score, got %q", got)
+	}
+	if strings.Contains(got, "{random}") || strings.Contains(got, "{random:8}") || strings.Contains(got, "{emoji}") {
+		t.Fatalf("random variables were not replaced: %q", got)
+	}
+}
+
+func TestFormatVideoCaptionRatingFallsBackToRandomScore(t *testing.T) {
+	got := formatVideoCaption("评分：{rating}", content.ContentItem{Title: "无评分"}, "成人")
+	if !regexp.MustCompile(`评分：[789]\.[0-9]`).MatchString(got) {
+		t.Fatalf("rating fallback = %q", got)
 	}
 }

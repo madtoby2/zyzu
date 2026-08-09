@@ -278,12 +278,10 @@ function defaultVideoFormatFor(category){
   return document.getElementById('cfg-video-format')?.value||'{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n演员：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
 }
 function videoVariablesFor(category){
-  const base=[['{title}','标题'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间']];
+  const base=[['{title}','标题'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{tags}','标签组'],['{actor}','演员/主演/嘉宾'],['{director}','导演'],['{area}','地区'],['{language}','语言'],['{year}','年份'],['{score}','接口真实评分'],['{rating}','真实评分；没有则随机'],['{random_score}','随机评分'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间'],['{source}','资源站名称'],['{code}','资源ID/番号'],['{raw_category}','接口原分类'],['{emoji}','随机图标'],['{random}','随机6位码'],['{random:8}','随机指定长度']];
   const c=String(category||'').toLowerCase();
-  if(['成人','adult','av'].includes(c))return [...base,[ '{actor}','演员' ],[ '{code}','番号/资源ID' ],[ '{tags}','标签组' ]];
-  if(['电影','movie'].includes(c))return [...base,[ '{actor}','主演' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ]];
-  if(['电视剧','电视','tv','动漫','anime','综艺','variety','纪录片','documentary'].includes(c))return [...base,[ '{episode}','集名/期名' ],[ '{episode_index}','当前集序号' ],[ '{episode_total}','总集数' ],[ '{actor}','主演/嘉宾' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ]];
-  return [...base,[ '{actor}','演员/主演/嘉宾' ],[ '{director}','导演' ],[ '{area}','地区' ],[ '{language}','语言' ],[ '{year}','年份' ],[ '{score}','评分' ],[ '{tags}','标签组' ],[ '{code}','资源ID' ],[ '{raw_category}','接口原分类' ]];
+  if(['电视剧','电视','tv','动漫','anime','综艺','variety','纪录片','documentary'].includes(c))return [...base,[ '{episode}','集名/期名' ],[ '{episode_index}','当前集序号' ],[ '{episode_total}','总集数' ]];
+  return [...base,[ '{episode}','集名/期名（非剧集为空）' ],[ '{episode_index}','当前集序号（非剧集为0）' ],[ '{episode_total}','总集数（非剧集为0）' ]];
 }
 function variableButtons(category){
   return videoVariablesFor(category).map(v=>`<button class="btn btn-o" type="button" onclick="insertVideoVariable('${v[0]}')" title="${esc(v[1])}">${esc(v[0])}</button>`).join('');
