@@ -184,3 +184,29 @@ func TestFormatVideoCaptionIncludesMetadataTags(t *testing.T) {
 		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
 	}
 }
+
+func TestShouldPostSeriesEpisodesOnlyForSeriesCategories(t *testing.T) {
+	tv := content.ContentItem{Title: "测试剧", Category: "电视剧", Episodes: []string{"第01集$https://e.test/1.m3u8", "第02集$https://e.test/2.m3u8"}}
+	if !shouldPostSeriesEpisodes("电视剧", tv) {
+		t.Fatal("电视剧多集应按集连续推送")
+	}
+
+	movie := content.ContentItem{Title: "测试电影", Category: "电影", Episodes: []string{"正片$https://e.test/main.m3u8", "备用$https://e.test/backup.m3u8"}}
+	if shouldPostSeriesEpisodes("电影", movie) {
+		t.Fatal("电影多线路不应被当成连续剧集推送")
+	}
+}
+
+func TestEpisodeCaptionVariables(t *testing.T) {
+	item := content.ContentItem{
+		Title:        "测试剧",
+		EpisodeName:  "第02集",
+		EpisodeIndex: 2,
+		EpisodeTotal: 24,
+	}
+	format := "{title} · {episode}\n进度：第 {episode_index} / {episode_total} 集"
+	want := "测试剧 · 第02集\n进度：第 2 / 24 集"
+	if got := formatVideoCaption(format, item, "电视剧"); got != want {
+		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
+	}
+}

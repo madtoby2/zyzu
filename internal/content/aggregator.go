@@ -54,26 +54,29 @@ type APIDetailResp struct {
 
 // ContentItem is our unified content format.
 type ContentItem struct {
-	Key       string   `json:"-"`
-	Title     string   `json:"title"`
-	TypeName  string   `json:"type_name"`
-	Class     string   `json:"class"`
-	Actor     string   `json:"actor"`
-	Director  string   `json:"director"`
-	Area      string   `json:"area"`
-	Language  string   `json:"language"`
-	Year      string   `json:"year"`
-	Score     string   `json:"score"`
-	Duration  string   `json:"duration"`
-	Remarks   string   `json:"remarks"`
-	Category  string   `json:"category"`
-	Episodes  []string `json:"episodes"`
-	CoverURL  string   `json:"cover_url"`
-	Source    string   `json:"source"`
-	SourceURL string   `json:"source_url"`
-	VodID     int      `json:"vod_id"`
-	VodTime   string   `json:"vod_time"`
-	Intro     string   `json:"intro"`
+	Key          string   `json:"-"`
+	Title        string   `json:"title"`
+	TypeName     string   `json:"type_name"`
+	Class        string   `json:"class"`
+	Actor        string   `json:"actor"`
+	Director     string   `json:"director"`
+	Area         string   `json:"area"`
+	Language     string   `json:"language"`
+	Year         string   `json:"year"`
+	Score        string   `json:"score"`
+	Duration     string   `json:"duration"`
+	Remarks      string   `json:"remarks"`
+	Category     string   `json:"category"`
+	Episodes     []string `json:"episodes"`
+	EpisodeName  string   `json:"episode_name,omitempty"`
+	EpisodeIndex int      `json:"episode_index,omitempty"`
+	EpisodeTotal int      `json:"episode_total,omitempty"`
+	CoverURL     string   `json:"cover_url"`
+	Source       string   `json:"source"`
+	SourceURL    string   `json:"source_url"`
+	VodID        int      `json:"vod_id"`
+	VodTime      string   `json:"vod_time"`
+	Intro        string   `json:"intro"`
 }
 
 // DedupKey identifies one source item across scheduler runs. The source is

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
@@ -286,13 +287,24 @@ func (s *Scheduler) runContent(force bool) {
 	filtered := items[:0]
 	for _, item := range items {
 		key := content.DedupKey(item)
-		posted, checkErr := s.Store.HasContentPosted(key)
-		if checkErr != nil {
-			log.Printf("[content] dedup check %s: %v", item.Title, checkErr)
-			continue
-		}
-		if posted {
-			continue
+		if shouldPostSeriesEpisodes("", item) {
+			hasPending, checkErr := s.hasPendingEpisode(item)
+			if checkErr != nil {
+				log.Printf("[content] episode dedup check %s: %v", item.Title, checkErr)
+				continue
+			}
+			if !hasPending {
+				continue
+			}
+		} else {
+			posted, checkErr := s.Store.HasContentPosted(key)
+			if checkErr != nil {
+				log.Printf("[content] dedup check %s: %v", item.Title, checkErr)
+				continue
+			}
+			if posted {
+				continue
+			}
 		}
 		cooldown, cooldownErr := s.Store.ContentInFailureCooldown(key, 6*time.Hour)
 		if cooldownErr != nil || cooldown {
@@ -511,68 +523,140 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		s.setChannelJob(category, "downloading", item, 0)
 		log.Printf("[video] processing category=%s source=%s title=%s", category, item.Source, item.Title)
 
-		var filePath string
-		var err error
-		for _, episode := range item.Episodes {
-			parts := strings.SplitN(episode, "$", 2)
-			if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		seriesMode := shouldPostSeriesEpisodes(category, item)
+		for index, episode := range item.Episodes {
+			episodeName, episodeURL, ok := splitEpisode(episode)
+			if !ok {
 				continue
 			}
-			filePath, err = s.Video.Download(parts[1], item.Title)
-			if err == nil {
+			episodeItem := item
+			episodeItem.EpisodeName = episodeName
+			episodeItem.EpisodeIndex = index + 1
+			episodeItem.EpisodeTotal = len(item.Episodes)
+			episodeKey := content.DedupKey(item)
+			if seriesMode {
+				episodeKey = episodeDedupKey(item, episodeName, episodeURL, index)
+				postedBefore, checkErr := s.Store.HasContentPosted(episodeKey)
+				if checkErr != nil {
+					log.Printf("[video] episode dedup check %s (%s): %v", item.Title, episodeName, checkErr)
+					continue
+				}
+				if postedBefore {
+					continue
+				}
+			}
+			s.setChannelJob(category, "downloading", episodeItem, 0)
+			filePath, err := s.Video.Download(episodeURL, videoFileName(episodeItem))
+			if err != nil {
+				log.Printf("[video] download %s (%s): %v", item.Title, episodeName, err)
+				if !seriesMode {
+					s.setChannelJob(category, "retrying", item, 0)
+					_ = s.Store.LogContentFailure(content.DedupKey(item))
+					failedSources[sourceKey] = true
+					reason := compactError(err)
+					_ = s.Store.LogSourceFailure(sourceKey, item.Source, reason)
+					_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已暂时跳过资源站：%s · %s · %s", item.Source, item.Title, reason))
+				}
+				continue
+			}
+			downloadedSize := fileSize(filePath)
+			s.setChannelJob(category, "uploading", episodeItem, downloadedSize)
+			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), episodeItem, category)
+			_, err = s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
+			if err != nil {
+				log.Printf("[video] upload %s (%s): %v", item.Title, episodeName, err)
+				if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
+					log.Printf("[video] cleanup failed upload %s: %v", filePath, removeErr)
+				} else {
+					log.Printf("[video] removed failed upload: %s", filePath)
+				}
+				s.setChannelJob(category, "retrying", episodeItem, downloadedSize)
+				_ = s.Store.LogContentFailure(episodeKey)
+				if !seriesMode {
+					break
+				}
+				continue
+			}
+			uploadedSize := fileSize(filePath)
+			// Videos are temporary upload artifacts; remove them immediately after
+			// Telegram confirms the upload to prevent the VPS disk filling up.
+			if removeErr := os.Remove(filePath); removeErr != nil {
+				log.Printf("[video] cleanup %s: %v", filePath, removeErr)
+			}
+
+			posted++
+			_ = s.Store.ClearSourceFailure(sourceKey)
+			if err := s.Store.LogContentPost(episodeKey); err != nil {
+				log.Printf("[content] record %s (%s): %v", item.Title, episodeName, err)
+			}
+			s.setChannelJob(category, "completed", episodeItem, uploadedSize)
+			log.Printf("[video] posted: %s (%s, category=%s, %.0fMB)", item.Title, episodeName, category, float64(uploadedSize)/1024/1024)
+			time.Sleep(3 * time.Second) // TG rate limit for large uploads
+			if !seriesMode {
 				break
 			}
-			log.Printf("[video] download %s (%s): %v", item.Title, parts[0], err)
 		}
-		if err != nil || filePath == "" {
-			s.setChannelJob(category, "retrying", item, 0)
-			_ = s.Store.LogContentFailure(content.DedupKey(item))
-			failedSources[sourceKey] = true
-			reason := compactError(err)
-			_ = s.Store.LogSourceFailure(sourceKey, item.Source, reason)
-			_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已暂时跳过资源站：%s · %s · %s", item.Source, item.Title, reason))
-			continue
-		}
-
-		downloadedSize := fileSize(filePath)
-		s.setChannelJob(category, "uploading", item, downloadedSize)
-		caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), item, category)
-		if item.TypeName != "" {
-			caption += fmt.Sprintf(" | %s", item.TypeName)
-		}
-		caption += fmt.Sprintf("\n📡 %s", item.Source)
-
-		// The configured template is authoritative; discard legacy appended source text.
-		caption = formatVideoCaption(s.Cfg.VideoFormatFor(category), item, category)
-		_, err = s.Poster.PostVideo(filePath, caption, category, item.CoverURL, s.Cfg.SeparateCover)
-		if err != nil {
-			log.Printf("[video] upload %s: %v", item.Title, err)
-			if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
-				log.Printf("[video] cleanup failed upload %s: %v", filePath, removeErr)
-			} else {
-				log.Printf("[video] removed failed upload: %s", filePath)
-			}
-			s.setChannelJob(category, "retrying", item, downloadedSize)
-			_ = s.Store.LogContentFailure(content.DedupKey(item))
-			continue
-		}
-		uploadedSize := fileSize(filePath)
-		// Videos are temporary upload artifacts; remove them immediately after
-		// Telegram confirms the upload to prevent the VPS disk filling up.
-		if removeErr := os.Remove(filePath); removeErr != nil {
-			log.Printf("[video] cleanup %s: %v", filePath, removeErr)
-		}
-
-		posted++
-		_ = s.Store.ClearSourceFailure(sourceKey)
-		if err := s.Store.LogContentPost(content.DedupKey(item)); err != nil {
-			log.Printf("[content] record %s: %v", item.Title, err)
-		}
-		s.setChannelJob(category, "completed", item, uploadedSize)
-		log.Printf("[video] posted: %s (category=%s, %.0fMB)", item.Title, category, float64(uploadedSize)/1024/1024)
-		time.Sleep(3 * time.Second) // TG rate limit for large uploads
 	}
 	return posted
+}
+
+func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {
+	for index, episode := range item.Episodes {
+		name, url, ok := splitEpisode(episode)
+		if !ok {
+			continue
+		}
+		posted, err := s.Store.HasContentPosted(episodeDedupKey(item, name, url, index))
+		if err != nil {
+			return false, err
+		}
+		if !posted {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func splitEpisode(raw string) (name, url string, ok bool) {
+	parts := strings.SplitN(raw, "$", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	name = strings.TrimSpace(parts[0])
+	url = strings.TrimSpace(parts[1])
+	if name == "" {
+		name = "正片"
+	}
+	return name, url, url != ""
+}
+
+func episodeDedupKey(item content.ContentItem, episodeName, episodeURL string, index int) string {
+	raw := fmt.Sprintf("%s\x00episode:%d\x00%s\x00%s", content.DedupKey(item), index+1, strings.TrimSpace(episodeName), strings.TrimSpace(episodeURL))
+	sum := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func shouldPostSeriesEpisodes(routeCategory string, item content.ContentItem) bool {
+	if len(item.Episodes) <= 1 {
+		return false
+	}
+	raw := strings.ToLower(routeCategory + " " + item.Category + " " + item.TypeName + " " + item.Class)
+	return strings.Contains(raw, "电视剧") ||
+		strings.Contains(raw, "电视") ||
+		strings.Contains(raw, "tv") ||
+		strings.Contains(raw, "动漫") ||
+		strings.Contains(raw, "anime") ||
+		strings.Contains(raw, "综艺") ||
+		strings.Contains(raw, "variety") ||
+		strings.Contains(raw, "纪录片") ||
+		strings.Contains(raw, "documentary")
+}
+
+func videoFileName(item content.ContentItem) string {
+	if strings.TrimSpace(item.EpisodeName) == "" {
+		return item.Title
+	}
+	return strings.TrimSpace(item.Title + " " + item.EpisodeName)
 }
 
 func sourceFailureKeyForStation(source store.Station) string {
@@ -752,6 +836,10 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{id}", code,
 		"{title}", escapeHTML(item.Title),
 		"{name}", escapeHTML(item.Title),
+		"{episode}", escapeHTML(item.EpisodeName),
+		"{episode_name}", escapeHTML(item.EpisodeName),
+		"{episode_index}", fmt.Sprintf("%d", item.EpisodeIndex),
+		"{episode_total}", fmt.Sprintf("%d", item.EpisodeTotal),
 		"{channel}", escapeHTML(channelLabel),
 		"{category}", escapeHTML(categoryLabel),
 		"{raw_category}", escapeHTML(item.Category),
