@@ -788,14 +788,18 @@ func diskStatus(path string) map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{"ok": false, "error": err.Error()}
 	}
-	lines := strings.Fields(string(out))
-	if len(lines) < 12 {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 {
 		return map[string]interface{}{"ok": false, "error": "unexpected df output"}
 	}
-	totalKB, _ := strconv.ParseInt(lines[7], 10, 64)
-	usedKB, _ := strconv.ParseInt(lines[8], 10, 64)
-	availKB, _ := strconv.ParseInt(lines[9], 10, 64)
-	usedPct := strings.TrimSuffix(lines[10], "%")
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 5 {
+		return map[string]interface{}{"ok": false, "error": "unexpected df output"}
+	}
+	totalKB, _ := strconv.ParseInt(fields[1], 10, 64)
+	usedKB, _ := strconv.ParseInt(fields[2], 10, 64)
+	availKB, _ := strconv.ParseInt(fields[3], 10, 64)
+	usedPct := strings.TrimSuffix(fields[4], "%")
 	usedPercent, _ := strconv.Atoi(usedPct)
 	return map[string]interface{}{
 		"ok":           true,
