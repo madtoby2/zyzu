@@ -37,6 +37,7 @@ type Scheduler struct {
 	categoryRuns map[string]bool
 	categoryLast map[string]time.Time
 	channelJobs  map[string]ChannelJobStatus
+	skippedItems map[string]time.Time
 	lastRun      time.Time
 	lastError    string
 	NewCount     int
@@ -49,7 +50,31 @@ type ChannelJobStatus struct {
 	Title     string    `json:"title"`
 	Source    string    `json:"source"`
 	SizeMB    float64   `json:"size_mb,omitempty"`
+	Key       string    `json:"key,omitempty"`
+	Episode   string    `json:"episode,omitempty"`
+	Index     int       `json:"episode_index,omitempty"`
+	Total     int       `json:"episode_total,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type ContentPreview struct {
+	Key          string    `json:"key"`
+	Title        string    `json:"title"`
+	Source       string    `json:"source"`
+	SourceURL    string    `json:"source_url"`
+	Category     string    `json:"category"`
+	TypeName     string    `json:"type_name"`
+	Class        string    `json:"class"`
+	Actor        string    `json:"actor"`
+	Year         string    `json:"year"`
+	Remarks      string    `json:"remarks"`
+	Intro        string    `json:"intro"`
+	CoverURL     string    `json:"cover_url"`
+	VodTime      string    `json:"vod_time"`
+	EpisodeCount int       `json:"episode_count"`
+	Posted       bool      `json:"posted"`
+	Skipped      bool      `json:"skipped"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Config) *Scheduler {
@@ -67,6 +92,7 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		categoryRuns: make(map[string]bool),
 		categoryLast: make(map[string]time.Time),
 		channelJobs:  make(map[string]ChannelJobStatus),
+		skippedItems: make(map[string]time.Time),
 	}
 }
 
@@ -92,6 +118,116 @@ func (s *Scheduler) Start() error {
 func (s *Scheduler) Stop()          { s.cron.Stop() }
 func (s *Scheduler) RunNow()        { go s.runScrape() }
 func (s *Scheduler) RunContentNow() { go s.runContent(true) }
+func (s *Scheduler) RunContentCategoryNow(category string) {
+	go s.runContentCategories(true, []string{category})
+}
+
+func (s *Scheduler) SkipCurrentChannelItem(category string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.channelJobs[category]
+	if !ok || strings.TrimSpace(job.Key) == "" {
+		return false
+	}
+	s.skippedItems[job.Key] = time.Now()
+	job.State = "skipped"
+	job.UpdatedAt = time.Now()
+	s.channelJobs[category] = job
+	return true
+}
+
+func (s *Scheduler) isSkipped(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	skippedAt, ok := s.skippedItems[key]
+	if !ok {
+		return false
+	}
+	if time.Since(skippedAt) > 24*time.Hour {
+		delete(s.skippedItems, key)
+		return false
+	}
+	return true
+}
+
+func (s *Scheduler) ContentPreview(category string, limit int) ([]ContentPreview, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	allSources, err := content.GetActiveSources(s.Store, 0)
+	if err != nil {
+		return nil, err
+	}
+	activeSources := make([]store.Station, 0, len(allSources))
+	for _, source := range allSources {
+		if !stationCategoryMatches(category, source.Category) {
+			continue
+		}
+		sourceKey := sourceFailureKeyForStation(source)
+		cooldown, cooldownErr := s.Store.SourceInFailureCooldown(sourceKey, 6*time.Hour)
+		if cooldownErr != nil {
+			log.Printf("[preview] source cooldown check %s: %v", source.Name, cooldownErr)
+		}
+		if cooldown {
+			continue
+		}
+		activeSources = append(activeSources, source)
+	}
+	if len(activeSources) == 0 {
+		return []ContentPreview{}, nil
+	}
+	agg := content.New(selectContentSources(activeSources, s.Cfg, 3, 3))
+	items, err := agg.FetchLatest()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ContentPreview, 0, limit)
+	for _, item := range items {
+		if !stationCategoryMatches(category, item.Category) {
+			continue
+		}
+		key := content.DedupKey(item)
+		posted, err := s.contentPostedForCategory(category, item)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ContentPreview{
+			Key:          key,
+			Title:        item.Title,
+			Source:       item.Source,
+			SourceURL:    item.SourceURL,
+			Category:     item.Category,
+			TypeName:     item.TypeName,
+			Class:        item.Class,
+			Actor:        item.Actor,
+			Year:         item.Year,
+			Remarks:      item.Remarks,
+			Intro:        item.Intro,
+			CoverURL:     item.CoverURL,
+			VodTime:      item.VodTime,
+			EpisodeCount: len(item.Episodes),
+			Posted:       posted,
+			Skipped:      s.isSkipped(key),
+			UpdatedAt:    time.Now(),
+		})
+		if len(result) >= limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+func (s *Scheduler) contentPostedForCategory(category string, item content.ContentItem) (bool, error) {
+	if s.Cfg.ChannelPolicy(category).AllowSeries && shouldPostSeriesEpisodes(category, item) {
+		hasPending, err := s.hasPendingEpisode(item)
+		return !hasPending, err
+	}
+	return s.Store.HasContentPosted(content.DedupKey(item))
+}
 
 func (s *Scheduler) SendScheduledMessageNow(id int64) error {
 	s.scheduledMu.Lock()
@@ -225,6 +361,10 @@ func (s *Scheduler) runScrape() {
 }
 
 func (s *Scheduler) runContent(force bool) {
+	s.runContentCategories(force, nil)
+}
+
+func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 	s.mu.Lock()
 	if s.contentRun {
 		s.mu.Unlock()
@@ -239,7 +379,7 @@ func (s *Scheduler) runContent(force bool) {
 		s.mu.Unlock()
 	}()
 
-	dueCategories := s.dueContentCategories(force)
+	dueCategories := s.dueContentCategoriesFor(force, onlyCategories)
 	if len(dueCategories) == 0 {
 		log.Printf("[scheduler] content: no channel is due")
 		return
@@ -287,6 +427,9 @@ func (s *Scheduler) runContent(force bool) {
 	filtered := items[:0]
 	for _, item := range items {
 		key := content.DedupKey(item)
+		if s.isSkipped(key) {
+			continue
+		}
 		if shouldPostSeriesEpisodes("", item) {
 			hasPending, checkErr := s.hasPendingEpisode(item)
 			if checkErr != nil {
@@ -329,7 +472,8 @@ func (s *Scheduler) runContent(force bool) {
 	claimed := make(map[string]bool)
 	dispatched := 0
 	for _, category := range dueCategories {
-		candidates := selectCategoryCandidates(filtered, category, 5, claimed)
+		policy := s.Cfg.ChannelPolicy(category)
+		candidates := selectCategoryCandidates(filtered, category, policy.PerRunLimit, claimed)
 		if len(candidates) == 0 {
 			log.Printf("[scheduler] channel=%s: no new matching item", category)
 			continue
@@ -346,6 +490,7 @@ func (s *Scheduler) runContent(force bool) {
 			State:     "queued",
 			Title:     candidates[0].Title,
 			Source:    candidates[0].Source,
+			Key:       candidates[0].Key,
 			UpdatedAt: time.Now(),
 		}
 		s.mu.Unlock()
@@ -361,13 +506,30 @@ func (s *Scheduler) runContent(force bool) {
 }
 
 func (s *Scheduler) dueContentCategories(force bool) []string {
+	return s.dueContentCategoriesFor(force, nil)
+}
+
+func (s *Scheduler) dueContentCategoriesFor(force bool, only []string) []string {
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	onlySet := make(map[string]bool)
+	for _, category := range only {
+		category = strings.TrimSpace(category)
+		if category != "" {
+			onlySet[category] = true
+		}
+	}
 	categories := make([]string, 0, len(s.Cfg.ChannelMap))
 	for category, ids := range s.Cfg.ChannelMap {
+		if len(onlySet) > 0 && !onlySet[category] {
+			continue
+		}
 		if len(ids) == 0 || s.categoryRuns[category] {
+			continue
+		}
+		if s.Cfg.ChannelPolicy(category).Paused {
 			continue
 		}
 		interval := time.Duration(s.Cfg.ChannelIntervalMinutes(category)) * time.Minute
@@ -444,9 +606,11 @@ func (s *Scheduler) runContentCategory(mode, category string, items []content.Co
 		_ = s.Store.LogContentPost(item.Key)
 		posted = 1
 	case "video":
+		limit := s.Cfg.ChannelPolicy(category).PerRunLimit
 		for _, item := range items {
-			if s.runVideoCategory(category, []content.ContentItem{item}) > 0 {
-				posted = 1
+			count := s.runVideoCategory(category, []content.ContentItem{item})
+			posted += count
+			if posted >= limit {
 				break
 			}
 		}
@@ -468,6 +632,10 @@ func (s *Scheduler) setChannelJob(category, state string, item content.ContentIt
 		Title:     item.Title,
 		Source:    item.Source,
 		SizeMB:    float64(sizeBytes) / 1024 / 1024,
+		Key:       item.Key,
+		Episode:   item.EpisodeName,
+		Index:     item.EpisodeIndex,
+		Total:     item.EpisodeTotal,
 		UpdatedAt: time.Now(),
 	}
 }
@@ -523,8 +691,13 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		s.setChannelJob(category, "downloading", item, 0)
 		log.Printf("[video] processing category=%s source=%s title=%s", category, item.Source, item.Title)
 
-		seriesMode := shouldPostSeriesEpisodes(category, item)
+		policy := s.Cfg.ChannelPolicy(category)
+		seriesMode := policy.AllowSeries && shouldPostSeriesEpisodes(category, item)
+		seriesPosted := 0
 		for index, episode := range item.Episodes {
+			if seriesMode && policy.PerSeriesLimit > 0 && seriesPosted >= policy.PerSeriesLimit {
+				break
+			}
 			episodeName, episodeURL, ok := splitEpisode(episode)
 			if !ok {
 				continue
@@ -544,6 +717,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 				if postedBefore {
 					continue
 				}
+			}
+			episodeItem.Key = episodeKey
+			if s.isSkipped(episodeKey) {
+				continue
 			}
 			s.setChannelJob(category, "downloading", episodeItem, 0)
 			filePath, err := s.Video.Download(episodeURL, videoFileName(episodeItem))
@@ -585,6 +762,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			}
 
 			posted++
+			seriesPosted++
 			_ = s.Store.ClearSourceFailure(sourceKey)
 			if err := s.Store.LogContentPost(episodeKey); err != nil {
 				log.Printf("[content] record %s (%s): %v", item.Title, episodeName, err)

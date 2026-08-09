@@ -8,21 +8,60 @@ import (
 )
 
 type Config struct {
-	BotToken         string             `json:"bot_token"`
-	ChannelIDs       []int64            `json:"channel_ids"`                 // deprecated
-	ChannelID        int64              `json:"channel_id"`                  // deprecated
-	ChannelMap       map[string][]int64 `json:"channel_map"`                 // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
-	ChannelIntervals map[string]int     `json:"channel_intervals,omitempty"` // category -> minutes
-	APIKey           string             `json:"api_key"`
-	ScrapeCron       string             `json:"scrape_cron"`
-	ContentCron      string             `json:"content_cron"`
-	ListenAddr       string             `json:"listen_addr"`
-	PostFormat       string             `json:"post_format"`
-	VideoFormat      string             `json:"video_format"`
-	VideoFormats     map[string]string  `json:"video_formats,omitempty"`
-	ContentMode      string             `json:"content_mode"`
-	ContentLimit     int                `json:"content_limit"`
-	SeparateCover    bool               `json:"separate_cover"`
+	BotToken         string                   `json:"bot_token"`
+	ChannelIDs       []int64                  `json:"channel_ids"`                 // deprecated
+	ChannelID        int64                    `json:"channel_id"`                  // deprecated
+	ChannelMap       map[string][]int64       `json:"channel_map"`                 // {"adult":[-1001], "movie":[-1002], "default":[-1000]}
+	ChannelIntervals map[string]int           `json:"channel_intervals,omitempty"` // category -> minutes
+	ChannelPolicies  map[string]ChannelPolicy `json:"channel_policies,omitempty"`
+	APIKey           string                   `json:"api_key"`
+	ScrapeCron       string                   `json:"scrape_cron"`
+	ContentCron      string                   `json:"content_cron"`
+	ListenAddr       string                   `json:"listen_addr"`
+	PostFormat       string                   `json:"post_format"`
+	VideoFormat      string                   `json:"video_format"`
+	VideoFormats     map[string]string        `json:"video_formats,omitempty"`
+	ContentMode      string                   `json:"content_mode"`
+	ContentLimit     int                      `json:"content_limit"`
+	SeparateCover    bool                     `json:"separate_cover"`
+}
+
+type ChannelPolicy struct {
+	Paused         bool `json:"paused"`
+	PerRunLimit    int  `json:"per_run_limit"`
+	PerSeriesLimit int  `json:"per_series_limit"`
+	AllowSeries    bool `json:"allow_series"`
+}
+
+func DefaultChannelPolicy(category string) ChannelPolicy {
+	switch strings.TrimSpace(strings.ToLower(category)) {
+	case "adult", "成人", "av":
+		return ChannelPolicy{PerRunLimit: 3, PerSeriesLimit: 1, AllowSeries: false}
+	case "tv", "电视剧", "电视", "anime", "动漫", "variety", "综艺", "documentary", "纪录片":
+		return ChannelPolicy{PerRunLimit: 2, PerSeriesLimit: 3, AllowSeries: true}
+	case "movie", "电影":
+		return ChannelPolicy{PerRunLimit: 1, PerSeriesLimit: 1, AllowSeries: false}
+	default:
+		return ChannelPolicy{PerRunLimit: 2, PerSeriesLimit: 2, AllowSeries: true}
+	}
+}
+
+func (c *Config) ChannelPolicy(category string) ChannelPolicy {
+	policy := DefaultChannelPolicy(category)
+	for _, key := range channelKeys(category) {
+		if configured, ok := c.ChannelPolicies[key]; ok {
+			if configured.PerRunLimit > 0 {
+				policy.PerRunLimit = configured.PerRunLimit
+			}
+			if configured.PerSeriesLimit > 0 {
+				policy.PerSeriesLimit = configured.PerSeriesLimit
+			}
+			policy.Paused = configured.Paused
+			policy.AllowSeries = configured.AllowSeries
+			return policy
+		}
+	}
+	return policy
 }
 
 // ChannelIntervalMinutes returns the configured automatic publishing interval.
@@ -66,14 +105,14 @@ func defaultVideoFormats() map[string]string {
 		"adult":       "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}",
 		"电影":          "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
 		"movie":       "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"电视剧":         "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"tv":          "{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"动漫":          "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"anime":       "{title}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"综艺":          "{title}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"variety":     "{title}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
-		"纪录片":         "{title}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n时长：{duration}\n更新：{updated_at}",
-		"documentary": "{title}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n时长：{duration}\n更新：{updated_at}",
+		"电视剧":         "{title} · {episode}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}",
+		"tv":          "{title} · {episode}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}",
+		"动漫":          "{title} · {episode}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}",
+		"anime":       "{title} · {episode}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}",
+		"综艺":          "{title} · {episode}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 期\n状态：{remarks}\n更新：{updated_at}",
+		"variety":     "{title} · {episode}\n\n简介：{intro}\n嘉宾：{actor}\n标签：{tags}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 期\n状态：{remarks}\n更新：{updated_at}",
+		"纪录片":         "{title} · {episode}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n时长：{duration}\n更新：{updated_at}",
+		"documentary": "{title} · {episode}\n\n简介：{intro}\n类型：{type} / {class}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n时长：{duration}\n更新：{updated_at}",
 	}
 }
 
@@ -90,6 +129,9 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.VideoFormats = mergeVideoFormatDefaults(cfg.VideoFormats)
+	if cfg.ChannelPolicies == nil {
+		cfg.ChannelPolicies = map[string]ChannelPolicy{}
+	}
 	return cfg, nil
 }
 

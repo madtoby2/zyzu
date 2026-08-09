@@ -48,12 +48,16 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/stations/{slug}/post", h.manualPost)
 		r.Post("/api/trigger", h.triggerScrape)
 		r.Post("/api/content/trigger", h.triggerContent)
+		r.Get("/api/content/preview", h.previewContent)
 		r.Get("/api/config", h.getConfig)
 		r.Put("/api/config", h.updateConfig)
 		r.Post("/api/event-log", h.postEventLog)
 		r.Delete("/api/event-log", h.clearEventLog)
 		r.Post("/api/channels", h.addChannel)
 		r.Delete("/api/channels", h.deleteChannel)
+		r.Post("/api/channels/{category}/trigger", h.triggerChannelContent)
+		r.Post("/api/channels/{category}/skip", h.skipChannelItem)
+		r.Put("/api/channels/{category}/policy", h.updateChannelPolicy)
 		r.Post("/api/telethon/request-code", h.telethonRequestCode)
 		r.Post("/api/telethon/login", h.telethonLogin)
 		r.Get("/api/telethon/status", h.telethonStatus)
@@ -575,6 +579,70 @@ func (h *Handler) triggerContent(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "content fetch started"})
 }
 
+func (h *Handler) triggerChannelContent(w http.ResponseWriter, r *http.Request) {
+	category, err := url.PathUnescape(chi.URLParam(r, "category"))
+	if err != nil || strings.TrimSpace(category) == "" {
+		jsonError(w, "invalid category", http.StatusBadRequest)
+		return
+	}
+	h.sched.RunContentCategoryNow(category)
+	h.hub.Broadcast("content_triggered", map[string]string{"status": "started", "category": category})
+	jsonOK(w, map[string]string{"status": "channel content fetch started"})
+}
+
+func (h *Handler) skipChannelItem(w http.ResponseWriter, r *http.Request) {
+	category, err := url.PathUnescape(chi.URLParam(r, "category"))
+	if err != nil || strings.TrimSpace(category) == "" {
+		jsonError(w, "invalid category", http.StatusBadRequest)
+		return
+	}
+	if !h.sched.SkipCurrentChannelItem(category) {
+		jsonError(w, "no current channel item to skip", http.StatusNotFound)
+		return
+	}
+	_ = h.store.LogEvent("warn", fmt.Sprintf("频道“%s”已跳过当前候选资源", category))
+	jsonOK(w, map[string]string{"status": "skipped"})
+}
+
+func (h *Handler) previewContent(w http.ResponseWriter, r *http.Request) {
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	if category == "" {
+		jsonError(w, "category is required", http.StatusBadRequest)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	items, err := h.sched.ContentPreview(category, limit)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, items)
+}
+
+func (h *Handler) updateChannelPolicy(w http.ResponseWriter, r *http.Request) {
+	category, err := url.PathUnescape(chi.URLParam(r, "category"))
+	if err != nil || strings.TrimSpace(category) == "" {
+		jsonError(w, "invalid category", http.StatusBadRequest)
+		return
+	}
+	var policy config.ChannelPolicy
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&policy); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	policy = normalizeChannelPolicy(category, policy)
+	if h.cfg.ChannelPolicies == nil {
+		h.cfg.ChannelPolicies = map[string]config.ChannelPolicy{}
+	}
+	h.cfg.ChannelPolicies[category] = policy
+	if err := h.cfg.Save("config.json"); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.hub.Broadcast("config_updated", map[string]string{"status": "ok"})
+	jsonOK(w, policy)
+}
+
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	safe := map[string]interface{}{
 		"scrape_cron":       h.cfg.ScrapeCron,
@@ -585,6 +653,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"channel_ids":       h.cfg.ChannelIDs,
 		"channel_map":       h.cfg.ChannelMap,
 		"channel_intervals": h.cfg.ChannelIntervals,
+		"channel_policies":  h.cfg.ChannelPolicies,
 		"post_format":       h.cfg.PostFormat,
 		"video_format":      h.cfg.VideoFormat,
 		"video_formats":     h.cfg.VideoFormats,
@@ -694,9 +763,36 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 			h.cfg.ChannelIntervals = intervals
 		}
 	}
+	if v, ok := body["channel_policies"]; ok {
+		raw, _ := json.Marshal(v)
+		var policies map[string]config.ChannelPolicy
+		if err := json.Unmarshal(raw, &policies); err == nil {
+			for category, policy := range policies {
+				policies[category] = normalizeChannelPolicy(category, policy)
+			}
+			h.cfg.ChannelPolicies = policies
+		}
+	}
 	h.cfg.Save("config.json")
 	h.hub.Broadcast("config_updated", map[string]string{"status": "ok"})
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func normalizeChannelPolicy(category string, policy config.ChannelPolicy) config.ChannelPolicy {
+	defaults := config.DefaultChannelPolicy(category)
+	if policy.PerRunLimit <= 0 {
+		policy.PerRunLimit = defaults.PerRunLimit
+	}
+	if policy.PerRunLimit > 20 {
+		policy.PerRunLimit = 20
+	}
+	if policy.PerSeriesLimit <= 0 {
+		policy.PerSeriesLimit = defaults.PerSeriesLimit
+	}
+	if policy.PerSeriesLimit > 20 {
+		policy.PerSeriesLimit = 20
+	}
+	return policy
 }
 
 func (h *Handler) getStatus(w http.ResponseWriter, r *http.Request) {
