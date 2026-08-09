@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,8 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		"-allowed_extensions", "ALL", // some HLS providers disguise media as images
 		"-allowed_segment_extensions", "ALL",
 		"-extension_picky", "0",
+		"-user_agent", "Mozilla/5.0",
+		"-headers", fmt.Sprintf("Referer: %s\r\n", mediaReferer(m3u8URL)),
 		"-i", m3u8URL,
 		"-c", "copy", // stream copy (fast, no re-encode)
 		"-bsf:a", "aac_adtstoasc",
@@ -106,6 +109,14 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	}
 	log.Printf("[video] downloaded %s -> %s (%.1fMB)", logURL, filename, float64(info.Size())/1024/1024)
 	return outPath, nil
+}
+
+func mediaReferer(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return raw
+	}
+	return parsed.Scheme + "://" + parsed.Host + "/"
 }
 
 func resolvePlayableURL(raw string) (string, error) {

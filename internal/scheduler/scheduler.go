@@ -687,16 +687,11 @@ func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
 
 func (s *Scheduler) runVideoCategory(category string, items []content.ContentItem) int {
 	posted := 0
-	failedSources := make(map[string]bool)
 	for _, item := range items {
 		if len(item.Episodes) == 0 {
 			continue
 		}
 		sourceKey := sourceFailureKeyForItem(item)
-		if failedSources[sourceKey] {
-			log.Printf("[video] skip %s: source %s already failed this round", item.Title, item.Source)
-			continue
-		}
 		s.setChannelJob(category, "downloading", item, 0)
 		log.Printf("[video] processing category=%s source=%s title=%s", category, item.Source, item.Title)
 
@@ -742,10 +737,8 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 				if !seriesMode {
 					s.setChannelJob(category, "retrying", item, 0)
 					_ = s.Store.LogContentFailure(content.DedupKey(item))
-					failedSources[sourceKey] = true
 					reason := compactError(err)
-					_ = s.Store.LogSourceFailure(sourceKey, item.Source, reason)
-					_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已暂时跳过资源站：%s · %s · %s", item.Source, item.Title, reason))
+					_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已跳过当前资源：%s · %s · %s", item.Source, item.Title, reason))
 				}
 				continue
 			}
