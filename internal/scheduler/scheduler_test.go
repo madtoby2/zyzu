@@ -221,6 +221,17 @@ func TestEpisodeDedupKeyIgnoresAlternatePlayerURL(t *testing.T) {
 	}
 }
 
+func TestEpisodeDedupKeyTreatsOtherStationsAsAlternateSources(t *testing.T) {
+	first := content.ContentItem{Title: "风带有香气", Year: "2026", SourceURL: "https://a.test/api", VodID: 11}
+	second := content.ContentItem{Title: " 风带有香气 ", Year: "2026", SourceURL: "https://b.test/api", VodID: 99}
+	if episodeDedupKey(first, "第01集", 0) != episodeDedupKey(second, "第01集", 0) {
+		t.Fatal("same series episode from different stations should share one directory key")
+	}
+	if episodeDedupKey(first, "第01集", 0) == episodeDedupKey(second, "第02集", 1) {
+		t.Fatal("different episodes must keep different directory keys")
+	}
+}
+
 func TestUniqueEpisodeCountCollapsesPlayerGroups(t *testing.T) {
 	episodes := []string{
 		"第01集$https://one.test/1.m3u8",

@@ -716,6 +716,13 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 					log.Printf("[video] episode dedup check %s (%s): %v", item.Title, candidate.Name, checkErr)
 					continue
 				}
+				if !postedBefore {
+					postedBefore, checkErr = s.Store.HasContentPosted(legacyEpisodeDedupKey(item, candidate.Name, candidate.FirstIndex))
+					if checkErr != nil {
+						log.Printf("[video] legacy episode dedup check %s (%s): %v", item.Title, candidate.Name, checkErr)
+						continue
+					}
+				}
 				if postedBefore {
 					continue
 				}
@@ -792,6 +799,12 @@ func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {
 			return false, err
 		}
 		if !posted {
+			posted, err = s.Store.HasContentPosted(legacyEpisodeDedupKey(item, candidate.Name, candidate.FirstIndex))
+			if err != nil {
+				return false, err
+			}
+		}
+		if !posted {
 			return true, nil
 		}
 	}
@@ -838,9 +851,30 @@ func splitEpisode(raw string) (name, url string, ok bool) {
 }
 
 func episodeDedupKey(item content.ContentItem, episodeName string, index int) string {
+	// A series is a logical directory. The same show/episode published by
+	// another station (or with a changed vod_id) is an alternate source, not a
+	// new video. Keep year in the identity to distinguish remakes.
+	raw := fmt.Sprintf("series:%s\x00year:%s\x00episode:%s",
+		seriesIdentity(item.Title), strings.TrimSpace(item.Year), episodeIdentity(episodeName, index))
+	sum := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func legacyEpisodeDedupKey(item content.ContentItem, episodeName string, index int) string {
 	raw := fmt.Sprintf("%s\x00episode:%s", content.DedupKey(item), episodeIdentity(episodeName, index))
 	sum := sha256.Sum256([]byte(raw))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func seriesIdentity(title string) string {
+	title = strings.ToLower(strings.TrimSpace(title))
+	var normalized strings.Builder
+	for _, r := range title {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			normalized.WriteRune(r)
+		}
+	}
+	return normalized.String()
 }
 
 func episodeIdentity(episodeName string, index int) string {
