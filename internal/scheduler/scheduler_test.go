@@ -164,7 +164,16 @@ func TestFormatVideoCaptionHidesEmptyIntroAndCoverURL(t *testing.T) {
 		CoverURL: "https://img.test/cover.webp",
 	}
 	format := "🎬 {cover}\n{title}\n简介：{intro}\n封面地址：{cover_url}"
-	want := "🎬 \n测试标题\n封面地址：https://img.test/cover.webp"
+	want := "测试标题\n封面地址：https://img.test/cover.webp"
+	if got := formatVideoCaption(format, item, "电视剧"); got != want {
+		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatVideoCaptionHidesAllEmptyMetadataLines(t *testing.T) {
+	item := content.ContentItem{Title: "测试标题", TypeName: "电视剧"}
+	format := "{title} · {episode}\n简介：{intro}\n类型：{type} / {class}\n演员：{actor}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n未知：{missing_field}"
+	want := "测试标题\n类型：电视剧"
 	if got := formatVideoCaption(format, item, "电视剧"); got != want {
 		t.Fatalf("formatVideoCaption() = %q, want %q", got, want)
 	}

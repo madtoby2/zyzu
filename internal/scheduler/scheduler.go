@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1034,59 +1035,78 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 	// Migrate the previously hard-coded heading at render time so existing
 	// installations immediately produce the correct text for every channel.
 	format = strings.ReplaceAll(format, "Madtoby的AV精选", "Madtoby的{channel}")
-	if strings.TrimSpace(item.Intro) == "" {
-		lines := strings.Split(format, "\n")
-		filtered := lines[:0]
-		for _, line := range lines {
-			if !strings.Contains(line, "{intro}") {
-				filtered = append(filtered, line)
-			}
-		}
-		format = strings.Join(filtered, "\n")
-	}
-
 	code := ""
 	if item.VodID > 0 {
 		code = fmt.Sprintf("%d", item.VodID)
+	}
+	episodeIndex, episodeTotal := "", ""
+	if item.EpisodeIndex > 0 {
+		episodeIndex = fmt.Sprintf("%d", item.EpisodeIndex)
+	}
+	if item.EpisodeTotal > 0 {
+		episodeTotal = fmt.Sprintf("%d", item.EpisodeTotal)
 	}
 	rating := strings.TrimSpace(item.Score)
 	if rating == "" {
 		rating = randomScore()
 	}
-	caption := strings.NewReplacer(
-		"{code}", code,
-		"{id}", code,
-		"{title}", escapeHTML(item.Title),
-		"{name}", escapeHTML(item.Title),
-		"{episode}", escapeHTML(item.EpisodeName),
-		"{episode_name}", escapeHTML(item.EpisodeName),
-		"{episode_index}", fmt.Sprintf("%d", item.EpisodeIndex),
-		"{episode_total}", fmt.Sprintf("%d", item.EpisodeTotal),
-		"{channel}", escapeHTML(channelLabel),
-		"{category}", escapeHTML(categoryLabel),
-		"{raw_category}", escapeHTML(item.Category),
-		"{type}", escapeHTML(item.TypeName),
-		"{class}", escapeHTML(item.Class),
-		"{tags}", escapeHTML(contentTags(item, routeCategory)),
-		"{actor}", escapeHTML(item.Actor),
-		"{director}", escapeHTML(item.Director),
-		"{area}", escapeHTML(item.Area),
-		"{language}", escapeHTML(item.Language),
-		"{year}", escapeHTML(item.Year),
-		"{score}", escapeHTML(item.Score),
-		"{rating}", escapeHTML(rating),
-		"{random_score}", escapeHTML(randomScore()),
-		"{emoji}", escapeHTML(randomEmoji()),
-		"{duration}", escapeHTML(item.Duration),
-		"{remarks}", escapeHTML(item.Remarks),
-		"{source}", escapeHTML(item.Source),
-		"{source_url}", escapeHTML(item.SourceURL),
-		"{intro}", escapeHTML(item.Intro),
-		"{cover}", "",
-		"{cover_url}", escapeHTML(item.CoverURL),
-		"{updated_at}", escapeHTML(item.VodTime),
-	).Replace(format)
-	return replaceRandomTokens(caption)
+	values := map[string]string{
+		"{code}": code, "{id}": code,
+		"{title}": escapeHTML(item.Title), "{name}": escapeHTML(item.Title),
+		"{episode}": escapeHTML(item.EpisodeName), "{episode_name}": escapeHTML(item.EpisodeName),
+		"{episode_index}": episodeIndex, "{episode_total}": episodeTotal,
+		"{channel}": escapeHTML(channelLabel), "{category}": escapeHTML(categoryLabel),
+		"{raw_category}": escapeHTML(item.Category), "{type}": escapeHTML(item.TypeName),
+		"{class}": escapeHTML(item.Class), "{tags}": escapeHTML(contentTags(item, routeCategory)),
+		"{actor}": escapeHTML(item.Actor), "{director}": escapeHTML(item.Director),
+		"{area}": escapeHTML(item.Area), "{language}": escapeHTML(item.Language),
+		"{year}": escapeHTML(item.Year), "{score}": escapeHTML(item.Score),
+		"{rating}": escapeHTML(rating), "{random_score}": escapeHTML(randomScore()),
+		"{emoji}": escapeHTML(randomEmoji()), "{duration}": escapeHTML(item.Duration),
+		"{remarks}": escapeHTML(item.Remarks), "{source}": escapeHTML(item.Source),
+		"{source_url}": escapeHTML(item.SourceURL), "{intro}": escapeHTML(item.Intro),
+		"{cover}": "", "{cover_url}": escapeHTML(item.CoverURL),
+		"{updated_at}": escapeHTML(item.VodTime),
+	}
+	return cleanCaptionTemplate(format, values)
+}
+
+var captionTokenPattern = regexp.MustCompile(`\{[a-zA-Z_][a-zA-Z0-9_]*(?::\d+)?\}`)
+
+func cleanCaptionTemplate(format string, values map[string]string) string {
+	lines := strings.Split(format, "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		tokens := captionTokenPattern.FindAllString(line, -1)
+		if len(tokens) > 0 {
+			hasValue := false
+			for _, token := range tokens {
+				if strings.HasPrefix(token, "{random") || strings.TrimSpace(values[token]) != "" {
+					hasValue = true
+					break
+				}
+			}
+			if !hasValue {
+				continue
+			}
+		}
+		line = captionTokenPattern.ReplaceAllStringFunc(line, func(token string) string {
+			if strings.HasPrefix(token, "{random") {
+				return token
+			}
+			return values[token]
+		})
+		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.Trim(line, "·/|,-—：: "))
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	caption := strings.Join(result, "\n")
+	for strings.Contains(caption, "\n\n\n") {
+		caption = strings.ReplaceAll(caption, "\n\n\n", "\n\n")
+	}
+	return strings.TrimSpace(replaceRandomTokens(caption))
 }
 
 func replaceRandomTokens(value string) string {
