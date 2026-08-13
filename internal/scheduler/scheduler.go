@@ -19,18 +19,20 @@ import (
 	"github.com/madtoby2/zyzu/internal/poster"
 	"github.com/madtoby2/zyzu/internal/scraper"
 	"github.com/madtoby2/zyzu/internal/store"
+	"github.com/madtoby2/zyzu/internal/translator"
 	"github.com/madtoby2/zyzu/internal/video"
 	"github.com/robfig/cron/v3"
 )
 
 type Scheduler struct {
-	cron    *cron.Cron
-	Store   *store.Store
-	Scraper *scraper.Scraper
-	Poster  *poster.Poster
-	Cfg     *config.Config
-	Agg     *content.Aggregator
-	Video   *video.Downloader
+	cron      *cron.Cron
+	Store     *store.Store
+	Scraper   *scraper.Scraper
+	Poster    *poster.Poster
+	Cfg       *config.Config
+	Agg       *content.Aggregator
+	Video     *video.Downloader
+	Translate *translator.Translator
 
 	mu           sync.Mutex
 	scheduledMu  sync.Mutex
@@ -99,6 +101,7 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		Poster:       p,
 		Cfg:          cfg,
 		Video:        video.New(workDir),
+		Translate:    translator.New(),
 		categoryRuns: make(map[string]bool),
 		categoryLast: make(map[string]time.Time),
 		channelJobs:  make(map[string]ChannelJobStatus),
@@ -752,6 +755,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			}
 			downloadedSize := fileSize(filePath)
 			s.setChannelJob(category, "uploading", episodeItem, downloadedSize)
+			episodeItem.Intro = s.Translate.Intro(episodeItem.Intro)
 			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), episodeItem, category)
 			videoMessageID, err := s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
 			if err != nil {
