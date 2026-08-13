@@ -151,6 +151,14 @@ func (s *Store) migrate() error {
 		posted_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_content_posts_posted_at ON content_posts(posted_at);
+	CREATE TABLE IF NOT EXISTS translation_cache (
+		source_hash TEXT PRIMARY KEY,
+		source_text TEXT NOT NULL,
+		translated_text TEXT NOT NULL,
+		provider TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS series_directory (
 		category TEXT NOT NULL,
 		channel_id INTEGER NOT NULL,
@@ -204,6 +212,23 @@ func (s *Store) migrate() error {
 	}
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
+	return err
+}
+
+func (s *Store) TranslationCacheGet(hash string) (string, bool, error) {
+	var translated string
+	err := s.db.QueryRow("SELECT translated_text FROM translation_cache WHERE source_hash=?", hash).Scan(&translated)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	return translated, err == nil, err
+}
+
+func (s *Store) TranslationCachePut(hash, source, translated, provider string) error {
+	_, err := s.db.Exec(`INSERT INTO translation_cache(source_hash, source_text, translated_text, provider)
+		VALUES (?, ?, ?, ?) ON CONFLICT(source_hash) DO UPDATE SET
+		translated_text=excluded.translated_text, provider=excluded.provider, updated_at=CURRENT_TIMESTAMP`,
+		hash, source, translated, provider)
 	return err
 }
 

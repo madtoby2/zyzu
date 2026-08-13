@@ -101,7 +101,7 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		Poster:       p,
 		Cfg:          cfg,
 		Video:        video.New(workDir),
-		Translate:    translator.New(),
+		Translate:    translator.New(st),
 		categoryRuns: make(map[string]bool),
 		categoryLast: make(map[string]time.Time),
 		channelJobs:  make(map[string]ChannelJobStatus),
