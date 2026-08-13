@@ -232,6 +232,17 @@ func (s *Store) TranslationCachePut(hash, source, translated, provider string) e
 	return err
 }
 
+func (s *Store) TranslationCacheCount() (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM translation_cache").Scan(&count)
+	return count, err
+}
+
+func (s *Store) TranslationCacheClear() error {
+	_, err := s.db.Exec("DELETE FROM translation_cache")
+	return err
+}
+
 func (s *Store) UpsertSeriesDirectory(entry SeriesDirectoryEntry) error {
 	_, err := s.db.Exec(`INSERT INTO series_directory
 		(category, channel_id, series_key, title, year, episode, video_message_id, directory_message_id, updated_at)

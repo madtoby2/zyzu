@@ -35,6 +35,13 @@ type Translator struct {
 	mu           sync.Mutex
 	bing         bingSession
 	bingCooldown time.Time
+	stats        Stats
+}
+
+type Stats struct {
+	BingSuccess, MemoryFallback, CacheHits, Failures int
+	LastProvider, LastError, LastInput, LastOutput   string
+	LastAt                                           time.Time
 }
 
 var (
@@ -58,6 +65,10 @@ func (t *Translator) Intro(text string) string {
 	hash := textHash(text)
 	if t.cache != nil {
 		if translated, found, err := t.cache.TranslationCacheGet(hash); err == nil && found {
+			t.mu.Lock()
+			t.stats.CacheHits++
+			t.stats.LastProvider, t.stats.LastInput, t.stats.LastOutput, t.stats.LastAt = "cache", text, translated, time.Now()
+			t.mu.Unlock()
 			return translated
 		}
 	}
@@ -67,13 +78,38 @@ func (t *Translator) Intro(text string) string {
 		provider = "mymemory"
 	}
 	if err != nil || strings.TrimSpace(translated) == "" || strings.EqualFold(strings.TrimSpace(translated), text) {
+		t.mu.Lock()
+		t.stats.Failures++
+		t.stats.LastError, t.stats.LastInput, t.stats.LastOutput, t.stats.LastAt = fmt.Sprint(err), text, text, time.Now()
+		t.mu.Unlock()
 		return text
 	}
 	translated = strings.TrimSpace(translated)
 	if t.cache != nil {
 		_ = t.cache.TranslationCachePut(hash, text, translated, provider)
 	}
+	t.mu.Lock()
+	if provider == "bing" {
+		t.stats.BingSuccess++
+	} else {
+		t.stats.MemoryFallback++
+	}
+	t.stats.LastProvider, t.stats.LastInput, t.stats.LastOutput, t.stats.LastError, t.stats.LastAt = provider, text, translated, "", time.Now()
+	t.mu.Unlock()
 	return translated
+}
+
+func (t *Translator) Status() map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return map[string]interface{}{
+		"provider": "Bing 优先 / MyMemory 兜底", "bing_cooling": time.Now().Before(t.bingCooldown),
+		"bing_cooldown_until": t.bingCooldown, "bing_success": t.stats.BingSuccess,
+		"memory_fallback": t.stats.MemoryFallback, "cache_hits": t.stats.CacheHits,
+		"failures": t.stats.Failures, "last_provider": t.stats.LastProvider,
+		"last_error": t.stats.LastError, "last_input": t.stats.LastInput,
+		"last_output": t.stats.LastOutput, "last_at": t.stats.LastAt,
+	}
 }
 
 func (t *Translator) translateBing(text, source string) (string, string, error) {

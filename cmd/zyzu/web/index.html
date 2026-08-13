@@ -83,7 +83,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 <div class="app" id="app">
   <div class="topbar">
     <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
-    <button onclick="logout()">断开</button>
+    <div><button onclick="openMonitor()">监控</button> <button onclick="logout()">断开</button></div>
   </div>
   <div class="grid">
     <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
@@ -171,12 +171,25 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <div class="modal-actions"><button class="btn btn-o" onclick="closeScheduledModal()">取消</button><button class="btn btn-p" onclick="saveScheduledMessage()">保存</button></div>
   </div>
 </div>
+<div class="modal hidden" id="monitor-modal" onclick="if(event.target===this)closeMonitor()">
+  <div class="modal-panel"><div class="modal-head"><h3>运行监控</h3><button class="modal-close" onclick="closeMonitor()">×</button></div>
+    <div id="monitor-body"><div class="empty-detail">正在读取...</div></div>
+    <div class="detail-section"><h4>测试外文简介翻译</h4><div class="toolbar"><input id="translation-test-text" value="This is a story about love and courage."><button class="btn btn-p" onclick="testTranslation()">测试翻译</button><button class="btn btn-o" onclick="clearTranslationCache()">清理缓存</button></div><div class="detail-row" id="translation-test-result">尚未测试</div></div>
+    <div class="modal-actions"><button class="btn btn-o" onclick="closeMonitor()">关闭</button></div>
+  </div>
+</div>
 <div id="toast-area"></div>
 
 <script>
 let server='',key='',stations=[],ws,channelMap={},channelIntervals={},channelPolicies={},channelJobs={},scheduledMessages=[],videoFormats={},logEntries=[],stationPage=1,contentPreviews={};
 const stationPageSize=10;
 const LS='zyzu_profiles', LOG_PREFIX='zyzu_logs:';
+
+async function openMonitor(){document.getElementById('monitor-modal').classList.remove('hidden');await loadMonitor()}
+function closeMonitor(){document.getElementById('monitor-modal').classList.add('hidden')}
+async function loadMonitor(){const el=document.getElementById('monitor-body');try{const [s,t]=await Promise.all([fetch(server+'/api/status').then(r=>r.json()),fetch(server+'/api/translation/status',{headers:{'X-API-Key':key}}).then(r=>r.json())]);if(!t.ok)throw new Error(t.error||'读取失败');const x=t.data||{},disk=s.data?.disk||{};el.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>翻译链路</small><b>${esc(x.provider||'-')}</b></div><div class="detail-item"><small>必应状态</small><b>${x.bing_cooling?'冷却中':'正常'}</b></div><div class="detail-item"><small>永久缓存</small><b>${x.cache_count||0} 条</b></div><div class="detail-item"><small>缓存命中</small><b>${x.cache_hits||0} 次</b></div><div class="detail-item"><small>必应成功</small><b>${x.bing_success||0} 次</b></div><div class="detail-item"><small>MyMemory 兜底</small><b>${x.memory_fallback||0} 次</b></div><div class="detail-item"><small>失败保留原文</small><b>${x.failures||0} 次</b></div><div class="detail-item"><small>机器磁盘剩余</small><b>${disk.ok?Number(disk.available_gb||0).toFixed(1)+'G':'-'}</b></div></div><div class="detail-section"><h4>最近一次翻译</h4><div class="detail-row">服务：${esc(x.last_provider||'暂无')}<br>原文：${esc(x.last_input||'暂无')}<br>译文：${esc(x.last_output||'暂无')}${x.last_error?'<br>错误：'+esc(x.last_error):''}</div></div>`}catch(e){el.innerHTML=`<div class="empty-detail">监控读取失败：${esc(e.message)}</div>`}}
+async function testTranslation(){const text=document.getElementById('translation-test-text').value.trim();if(!text)return;const out=document.getElementById('translation-test-result');out.textContent='翻译中...';try{const r=await fetch(server+'/api/translation/test',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':key},body:JSON.stringify({text})}).then(r=>r.json());if(!r.ok)throw new Error(r.error||'测试失败');out.textContent=`${r.data.translated}（${r.data.status.last_provider||'原文'}）`;await loadMonitor()}catch(e){out.textContent='测试失败：'+e.message}}
+async function clearTranslationCache(){if(!confirm('确定清理永久翻译缓存吗？'))return;await api('/api/translation/cache','DELETE');await loadMonitor()}
 
 function init(){
   const saved=JSON.parse(localStorage.getItem(LS)||'[]');

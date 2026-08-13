@@ -48,6 +48,9 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/stations/{slug}/post", h.manualPost)
 		r.Post("/api/trigger", h.triggerScrape)
 		r.Post("/api/content/trigger", h.triggerContent)
+		r.Get("/api/translation/status", h.translationStatus)
+		r.Post("/api/translation/test", h.translationTest)
+		r.Delete("/api/translation/cache", h.translationCacheClear)
 		r.Get("/api/content/preview", h.previewContent)
 		r.Get("/api/config", h.getConfig)
 		r.Put("/api/config", h.updateConfig)
@@ -68,6 +71,32 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/scheduled-messages/{id}/send", h.sendScheduledMessageNow)
 		r.Get("/ws", h.hub.HandleWS)
 	})
+}
+
+func (h *Handler) translationStatus(w http.ResponseWriter, r *http.Request) {
+	status := h.sched.Translate.Status()
+	count, _ := h.store.TranslationCacheCount()
+	status["cache_count"] = count
+	jsonOK(w, status)
+}
+
+func (h *Handler) translationTest(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body) != nil || strings.TrimSpace(body.Text) == "" {
+		jsonError(w, "请输入测试文本", http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, map[string]interface{}{"source": body.Text, "translated": h.sched.Translate.Intro(body.Text), "status": h.sched.Translate.Status()})
+}
+
+func (h *Handler) translationCacheClear(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.TranslationCacheClear(); err != nil {
+		jsonError(w, err.Error(), 500)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "cleared"})
 }
 
 func (h *Handler) listScheduledMessages(w http.ResponseWriter, r *http.Request) {
