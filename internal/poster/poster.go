@@ -80,6 +80,53 @@ func (p *Poster) PostToChannel(text string, chatID int64) (int, error) {
 	return p.sendTelethonRequest(text, chatID, true)
 }
 
+func (p *Poster) UpsertPinnedDirectory(text string, chatID int64, messageID int) (int, error) {
+	if chatID == 0 || strings.TrimSpace(text) == "" {
+		return 0, errors.New("directory channel or text is empty")
+	}
+	action := "create_directory"
+	if messageID > 0 {
+		action = "edit_directory"
+	}
+	return p.telethonJSON(map[string]interface{}{
+		"action": action, "chat_id": chatID, "text": text, "message_id": messageID,
+	})
+}
+
+func (p *Poster) telethonJSON(payload interface{}) (int, error) {
+	telethonMu.Lock()
+	defer telethonMu.Unlock()
+	python := os.Getenv("PYTHON_BIN")
+	if python == "" {
+		if _, err := os.Stat("/opt/zyzu/.venv/bin/python"); err == nil {
+			python = "/opt/zyzu/.venv/bin/python"
+		} else {
+			python = "python3"
+		}
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err
+	}
+	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
+	cmd.Stdin = bytes.NewReader(data)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(string(out)))
+	}
+	var result struct {
+		MessageID int    `json:"message_id"`
+		Error     string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, err
+	}
+	if result.Error != "" {
+		return 0, errors.New(result.Error)
+	}
+	return result.MessageID, nil
+}
+
 func (p *Poster) sendTelethon(text string, chatID int64) (int, error) {
 	return p.sendTelethonRequest(text, chatID, false)
 }

@@ -68,6 +68,18 @@ type ScheduledMessage struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
+type SeriesDirectoryEntry struct {
+	Category       string
+	ChannelID      int64
+	SeriesKey      string
+	Title          string
+	Year           string
+	Episode        string
+	VideoMessageID int
+	DirectoryMsgID int
+	UpdatedAt      time.Time
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -139,6 +151,20 @@ func (s *Store) migrate() error {
 		posted_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_content_posts_posted_at ON content_posts(posted_at);
+	CREATE TABLE IF NOT EXISTS series_directory (
+		category TEXT NOT NULL,
+		channel_id INTEGER NOT NULL,
+		series_key TEXT NOT NULL,
+		title TEXT NOT NULL,
+		year TEXT DEFAULT '',
+		episode TEXT DEFAULT '',
+		video_message_id INTEGER NOT NULL,
+		directory_message_id INTEGER DEFAULT 0,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (category, channel_id, series_key)
+	);
+	CREATE INDEX IF NOT EXISTS idx_series_directory_updated
+		ON series_directory(category, channel_id, updated_at DESC);
 	CREATE TABLE IF NOT EXISTS content_failures (
 		content_key TEXT PRIMARY KEY,
 		failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -178,6 +204,48 @@ func (s *Store) migrate() error {
 	}
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
+	return err
+}
+
+func (s *Store) UpsertSeriesDirectory(entry SeriesDirectoryEntry) error {
+	_, err := s.db.Exec(`INSERT INTO series_directory
+		(category, channel_id, series_key, title, year, episode, video_message_id, directory_message_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(category, channel_id, series_key) DO UPDATE SET
+		title=excluded.title, year=excluded.year, episode=excluded.episode,
+		video_message_id=excluded.video_message_id,
+		directory_message_id=CASE WHEN excluded.directory_message_id > 0 THEN excluded.directory_message_id ELSE series_directory.directory_message_id END,
+		updated_at=CURRENT_TIMESTAMP`, entry.Category, entry.ChannelID, entry.SeriesKey,
+		entry.Title, entry.Year, entry.Episode, entry.VideoMessageID, entry.DirectoryMsgID)
+	return err
+}
+
+func (s *Store) SeriesDirectory(category string, channelID int64, limit int) ([]SeriesDirectoryEntry, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 80
+	}
+	rows, err := s.db.Query(`SELECT category, channel_id, series_key, title, year, episode,
+		video_message_id, directory_message_id, updated_at FROM series_directory
+		WHERE category=? AND channel_id=? ORDER BY updated_at DESC LIMIT ?`, category, channelID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []SeriesDirectoryEntry
+	for rows.Next() {
+		var entry SeriesDirectoryEntry
+		if err := rows.Scan(&entry.Category, &entry.ChannelID, &entry.SeriesKey, &entry.Title,
+			&entry.Year, &entry.Episode, &entry.VideoMessageID, &entry.DirectoryMsgID, &entry.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, entry)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) SetSeriesDirectoryMessage(category string, channelID int64, messageID int) error {
+	_, err := s.db.Exec(`UPDATE series_directory SET directory_message_id=?
+		WHERE category=? AND channel_id=?`, messageID, category, channelID)
 	return err
 }
 

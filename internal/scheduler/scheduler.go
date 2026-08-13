@@ -753,7 +753,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			downloadedSize := fileSize(filePath)
 			s.setChannelJob(category, "uploading", episodeItem, downloadedSize)
 			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), episodeItem, category)
-			_, err = s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
+			videoMessageID, err := s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
 			if err != nil {
 				log.Printf("[video] upload %s (%s): %v", item.Title, candidate.Name, err)
 				if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
@@ -781,6 +781,12 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			if err := s.Store.LogContentPost(episodeKey); err != nil {
 				log.Printf("[content] record %s (%s): %v", item.Title, candidate.Name, err)
 			}
+			if seriesMode {
+				if directoryErr := s.updateSeriesDirectory(category, episodeItem, videoMessageID); directoryErr != nil {
+					log.Printf("[directory] update %s (%s): %v", item.Title, candidate.Name, directoryErr)
+					_ = s.Store.LogEvent("warn", fmt.Sprintf("电视剧目录更新失败：%s · %s", item.Title, compactError(directoryErr)))
+				}
+			}
 			s.setChannelJob(category, "completed", episodeItem, uploadedSize)
 			log.Printf("[video] posted: %s (%s, category=%s, %.0fMB)", item.Title, candidate.Name, category, float64(uploadedSize)/1024/1024)
 			time.Sleep(3 * time.Second) // TG rate limit for large uploads
@@ -790,6 +796,71 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		}
 	}
 	return posted
+}
+
+func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentItem, videoMessageID int) error {
+	channelID := s.Cfg.PickChannel(category)
+	if channelID == 0 || videoMessageID <= 0 {
+		return fmt.Errorf("channel or video message is unavailable")
+	}
+	key := seriesIdentity(item.Title) + "\x00" + strings.TrimSpace(item.Year)
+	entries, err := s.Store.SeriesDirectory(category, channelID, 80)
+	if err != nil {
+		return err
+	}
+	directoryMessageID := 0
+	for _, entry := range entries {
+		if entry.DirectoryMsgID > 0 {
+			directoryMessageID = entry.DirectoryMsgID
+			break
+		}
+	}
+	if err := s.Store.UpsertSeriesDirectory(store.SeriesDirectoryEntry{
+		Category: category, ChannelID: channelID, SeriesKey: key, Title: item.Title,
+		Year: item.Year, Episode: item.EpisodeName, VideoMessageID: videoMessageID,
+		DirectoryMsgID: directoryMessageID,
+	}); err != nil {
+		return err
+	}
+	entries, err = s.Store.SeriesDirectory(category, channelID, 80)
+	if err != nil {
+		return err
+	}
+	text := buildSeriesDirectoryText(channelID, entries)
+	messageID, err := s.Poster.UpsertPinnedDirectory(text, channelID, directoryMessageID)
+	if err != nil {
+		return err
+	}
+	if directoryMessageID == 0 {
+		return s.Store.SetSeriesDirectoryMessage(category, channelID, messageID)
+	}
+	return nil
+}
+
+func buildSeriesDirectoryText(channelID int64, entries []store.SeriesDirectoryEntry) string {
+	var b strings.Builder
+	b.WriteString("<b>📺 电视剧目录</b>\n\n")
+	for _, entry := range entries {
+		label := strings.TrimSpace(entry.Title)
+		if entry.Year != "" {
+			label += "（" + entry.Year + "）"
+		}
+		if entry.Episode != "" {
+			label += " · " + entry.Episode
+		}
+		fmt.Fprintf(&b, "• <a href=\"%s\">%s</a>\n", telegramMessageLink(channelID, entry.VideoMessageID), escapeHTML(label))
+		if b.Len() > 3700 {
+			break
+		}
+	}
+	b.WriteString("\n<i>新剧自动加入；更新剧集时链接自动指向最新一集。</i>")
+	return b.String()
+}
+
+func telegramMessageLink(channelID int64, messageID int) string {
+	id := strconv.FormatInt(channelID, 10)
+	id = strings.TrimPrefix(id, "-100")
+	return fmt.Sprintf("https://t.me/c/%s/%d", id, messageID)
 }
 
 func (s *Scheduler) hasPendingEpisode(item content.ContentItem) (bool, error) {

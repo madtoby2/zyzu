@@ -232,6 +232,16 @@ func TestEpisodeDedupKeyTreatsOtherStationsAsAlternateSources(t *testing.T) {
 	}
 }
 
+func TestBuildSeriesDirectoryTextLinksLatestEpisode(t *testing.T) {
+	entries := []store.SeriesDirectoryEntry{{Title: "风带有香气", Year: "2026", Episode: "第03集", VideoMessageID: 88}}
+	got := buildSeriesDirectoryText(-1004381187352, entries)
+	for _, want := range []string{"电视剧目录", "风带有香气", "第03集", "https://t.me/c/4381187352/88"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("directory missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestUniqueEpisodeCountCollapsesPlayerGroups(t *testing.T) {
 	episodes := []string{
 		"第01集$https://one.test/1.m3u8",

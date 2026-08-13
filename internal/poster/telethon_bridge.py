@@ -183,6 +183,14 @@ async def main():
     # Resolve the channel explicitly so Telethon uses its cached access hash
     # instead of treating a bare -100... ID as an invalid channel object.
     entity = await client.get_input_entity(chat_id) if chat_id is not None else None
+    if req.get('action') == 'create_directory':
+        msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
+        await client.pin_message(entity, msg.id, notify=False)
+        print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
+    if req.get('action') == 'edit_directory':
+        msg = await client.edit_message(entity, int(req['message_id']), req['text'], parse_mode='html', link_preview=False)
+        await client.pin_message(entity, msg.id, notify=False)
+        print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'upload_video':
         cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')
