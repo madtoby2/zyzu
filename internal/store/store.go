@@ -78,6 +78,13 @@ type SeriesDirectoryEntry struct {
 	VideoMessageID int
 	DirectoryMsgID int
 	UpdatedAt      time.Time
+	Episodes       []SeriesDirectoryEpisode
+}
+
+type SeriesDirectoryEpisode struct {
+	Episode        string
+	EpisodeIndex   int
+	VideoMessageID int
 }
 
 type Store struct {
@@ -173,6 +180,18 @@ func (s *Store) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_series_directory_updated
 		ON series_directory(category, channel_id, updated_at DESC);
+	CREATE TABLE IF NOT EXISTS series_directory_episodes (
+		category TEXT NOT NULL,
+		channel_id INTEGER NOT NULL,
+		series_key TEXT NOT NULL,
+		episode TEXT NOT NULL,
+		episode_index INTEGER NOT NULL DEFAULT 0,
+		video_message_id INTEGER NOT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (category, channel_id, series_key, episode)
+	);
+	CREATE INDEX IF NOT EXISTS idx_series_directory_episodes
+		ON series_directory_episodes(category, channel_id, series_key, episode_index);
 	CREATE TABLE IF NOT EXISTS content_failures (
 		content_key TEXT PRIMARY KEY,
 		failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -212,6 +231,12 @@ func (s *Store) migrate() error {
 	}
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
+	if err == nil {
+		_, err = s.db.Exec(`INSERT OR IGNORE INTO series_directory_episodes
+			(category, channel_id, series_key, episode, episode_index, video_message_id, updated_at)
+			SELECT category, channel_id, series_key, episode, 0, video_message_id, updated_at
+			FROM series_directory WHERE episode <> '' AND video_message_id > 0`)
+	}
 	return err
 }
 
@@ -244,7 +269,12 @@ func (s *Store) TranslationCacheClear() error {
 }
 
 func (s *Store) UpsertSeriesDirectory(entry SeriesDirectoryEntry) error {
-	_, err := s.db.Exec(`INSERT INTO series_directory
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`INSERT INTO series_directory
 		(category, channel_id, series_key, title, year, episode, video_message_id, directory_message_id, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(category, channel_id, series_key) DO UPDATE SET
@@ -253,7 +283,23 @@ func (s *Store) UpsertSeriesDirectory(entry SeriesDirectoryEntry) error {
 		directory_message_id=CASE WHEN excluded.directory_message_id > 0 THEN excluded.directory_message_id ELSE series_directory.directory_message_id END,
 		updated_at=CURRENT_TIMESTAMP`, entry.Category, entry.ChannelID, entry.SeriesKey,
 		entry.Title, entry.Year, entry.Episode, entry.VideoMessageID, entry.DirectoryMsgID)
-	return err
+	if err != nil {
+		return err
+	}
+	episodeIndex := 0
+	if len(entry.Episodes) > 0 {
+		episodeIndex = entry.Episodes[0].EpisodeIndex
+	}
+	_, err = tx.Exec(`INSERT INTO series_directory_episodes
+		(category, channel_id, series_key, episode, episode_index, video_message_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(category, channel_id, series_key, episode) DO UPDATE SET
+		episode_index=excluded.episode_index, video_message_id=excluded.video_message_id, updated_at=CURRENT_TIMESTAMP`,
+		entry.Category, entry.ChannelID, entry.SeriesKey, entry.Episode, episodeIndex, entry.VideoMessageID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SeriesDirectory(category string, channelID int64, limit int) ([]SeriesDirectoryEntry, error) {
@@ -276,7 +322,28 @@ func (s *Store) SeriesDirectory(category string, channelID int64, limit int) ([]
 		}
 		result = append(result, entry)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range result {
+		episodeRows, err := s.db.Query(`SELECT episode, episode_index, video_message_id
+			FROM series_directory_episodes WHERE category=? AND channel_id=? AND series_key=?
+			ORDER BY CASE WHEN episode_index > 0 THEN episode_index ELSE 2147483647 END, episode`,
+			category, channelID, result[i].SeriesKey)
+		if err != nil {
+			return nil, err
+		}
+		for episodeRows.Next() {
+			var episode SeriesDirectoryEpisode
+			if err := episodeRows.Scan(&episode.Episode, &episode.EpisodeIndex, &episode.VideoMessageID); err != nil {
+				episodeRows.Close()
+				return nil, err
+			}
+			result[i].Episodes = append(result[i].Episodes, episode)
+		}
+		episodeRows.Close()
+	}
+	return result, nil
 }
 
 func (s *Store) SetSeriesDirectoryMessage(category string, channelID int64, messageID int) error {

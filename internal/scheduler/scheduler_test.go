@@ -232,10 +232,10 @@ func TestEpisodeDedupKeyTreatsOtherStationsAsAlternateSources(t *testing.T) {
 	}
 }
 
-func TestBuildSeriesDirectoryTextLinksLatestEpisode(t *testing.T) {
-	entries := []store.SeriesDirectoryEntry{{Title: "风带有香气", Year: "2026", Episode: "第03集", VideoMessageID: 88}}
+func TestBuildSeriesDirectoryTextLinksEveryEpisode(t *testing.T) {
+	entries := []store.SeriesDirectoryEntry{{Title: "青春碎片", Year: "2026", Episodes: []store.SeriesDirectoryEpisode{{Episode: "第01集", EpisodeIndex: 1, VideoMessageID: 88}, {Episode: "第02集", EpisodeIndex: 2, VideoMessageID: 89}}}}
 	got := buildSeriesDirectoryText(-1004381187352, entries)
-	for _, want := range []string{"电视剧目录", "风带有香气", "第03集", "https://t.me/c/4381187352/88"} {
+	for _, want := range []string{"电视剧目录", "青春碎片（2026）", ">01</a>", ">02</a>", "https://t.me/c/4381187352/88", "https://t.me/c/4381187352/89"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("directory missing %q: %s", want, got)
 		}

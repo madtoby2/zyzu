@@ -822,7 +822,7 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 	if err := s.Store.UpsertSeriesDirectory(store.SeriesDirectoryEntry{
 		Category: category, ChannelID: channelID, SeriesKey: key, Title: item.Title,
 		Year: item.Year, Episode: item.EpisodeName, VideoMessageID: videoMessageID,
-		DirectoryMsgID: directoryMessageID,
+		DirectoryMsgID: directoryMessageID, Episodes: []store.SeriesDirectoryEpisode{{Episode: item.EpisodeName, EpisodeIndex: item.EpisodeIndex, VideoMessageID: videoMessageID}},
 	}); err != nil {
 		return err
 	}
@@ -849,16 +849,35 @@ func buildSeriesDirectoryText(channelID int64, entries []store.SeriesDirectoryEn
 		if entry.Year != "" {
 			label += "（" + entry.Year + "）"
 		}
-		if entry.Episode != "" {
-			label += " · " + entry.Episode
+		fmt.Fprintf(&b, "• %s ·", escapeHTML(label))
+		for _, episode := range entry.Episodes {
+			fmt.Fprintf(&b, " <a href=\"%s\">%s</a>", telegramMessageLink(channelID, episode.VideoMessageID), escapeHTML(compactEpisodeLabel(episode.Episode, episode.EpisodeIndex)))
 		}
-		fmt.Fprintf(&b, "• <a href=\"%s\">%s</a>\n", telegramMessageLink(channelID, entry.VideoMessageID), escapeHTML(label))
+		b.WriteString("\n")
 		if b.Len() > 3700 {
 			break
 		}
 	}
-	b.WriteString("\n<i>新剧自动加入；更新剧集时链接自动指向最新一集。</i>")
+	b.WriteString("\n<i>点击集数直接观看；新上传剧集会自动追加。</i>")
 	return b.String()
+}
+
+var episodeNumberPattern = regexp.MustCompile(`(?i)(?:第\s*)?(\d{1,4})(?:\s*[集期话]|\b)`)
+
+func compactEpisodeLabel(name string, index int) string {
+	if match := episodeNumberPattern.FindStringSubmatch(strings.TrimSpace(name)); len(match) > 1 {
+		if number, err := strconv.Atoi(match[1]); err == nil {
+			return fmt.Sprintf("%02d", number)
+		}
+	}
+	if index > 0 {
+		return fmt.Sprintf("%02d", index)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "正片"
+	}
+	return name
 }
 
 func telegramMessageLink(channelID int64, messageID int) string {
