@@ -771,6 +771,9 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			captionItem := episodeItem
 			captionItem.Title = s.Translate.Text(captionItem.Title)
 			captionItem.Intro = s.Translate.Text(captionItem.Intro)
+			if captionTextEquivalent(captionItem.Title, captionItem.Intro) {
+				captionItem.Intro = ""
+			}
 			if isAdultCategory(category) && s.CaptionAI.Enabled() {
 				aiCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 				aiCopy, aiErr := s.CaptionAI.Generate(aiCtx, captionItem, category)
@@ -1283,6 +1286,28 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{ai_copy}":    escapeHTML(item.AICopy),
 	}
 	return cleanCaptionTemplate(format, values)
+}
+
+var captionHTMLPattern = regexp.MustCompile(`<[^>]+>`)
+var captionComparablePattern = regexp.MustCompile(`[\p{Z}\p{P}\p{S}]+`)
+
+func captionTextEquivalent(title, intro string) bool {
+	normalize := func(value string) string {
+		value = captionHTMLPattern.ReplaceAllString(value, "")
+		value = strings.ToLower(strings.TrimSpace(value))
+		return captionComparablePattern.ReplaceAllString(value, "")
+	}
+	title = normalize(title)
+	intro = normalize(intro)
+	if title == "" || intro == "" {
+		return false
+	}
+	if title == intro {
+		return true
+	}
+	// Providers often use "title + title" or add a short resource code as
+	// the description. Hide it when it carries no meaningful extra text.
+	return len([]rune(intro)) <= len([]rune(title))*2+12 && strings.Count(intro, title) > 0
 }
 
 var captionTokenPattern = regexp.MustCompile(`\{[a-zA-Z_][a-zA-Z0-9_]*(?::\d+)?\}`)

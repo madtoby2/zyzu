@@ -296,6 +296,21 @@ func TestEpisodeCaptionVariables(t *testing.T) {
 	}
 }
 
+func TestCaptionTextEquivalentHidesRepeatedIntro(t *testing.T) {
+	for _, intro := range []string{
+		"测试影片",
+		"<p>测试影片</p>",
+		"测试影片 · 测试影片",
+	} {
+		if !captionTextEquivalent("测试影片", intro) {
+			t.Fatalf("expected repeated intro %q to match title", intro)
+		}
+	}
+	if captionTextEquivalent("测试影片", "这是一段包含具体剧情信息的独立简介") {
+		t.Fatal("meaningful intro should not be hidden")
+	}
+}
+
 func TestFormatVideoCaptionRandomAndRatingVariables(t *testing.T) {
 	item := content.ContentItem{Title: "测试影片", Score: "8.6"}
 	got := formatVideoCaption("评分：{rating}/{score}\n随机：{random}/{random:8}\n图标：{emoji}", item, "电影")
