@@ -471,12 +471,14 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 				continue
 			}
 		}
-		cooldown, cooldownErr := s.Store.ContentInFailureCooldown(key, 6*time.Hour)
-		if cooldownErr != nil || cooldown {
-			if cooldown {
-				log.Printf("[content] skip %s: download failure cooldown", item.Title)
+		if !force {
+			cooldown, cooldownErr := s.Store.ContentInFailureCooldown(key, 6*time.Hour)
+			if cooldownErr != nil || cooldown {
+				if cooldown {
+					log.Printf("[content] skip %s: download failure cooldown", item.Title)
+				}
+				continue
 			}
-			continue
 		}
 		item.Key = key
 		filtered = append(filtered, item)
@@ -751,7 +753,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			var filePath string
 			var err error
 			for _, episodeURL := range candidate.URLs {
-				filePath, err = s.Video.Download(episodeURL, videoFileName(episodeItem))
+				filePath, err = s.downloadWithRetry(category, episodeItem, episodeURL)
 				if err == nil {
 					break
 				}
@@ -833,6 +835,46 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		}
 	}
 	return posted
+}
+
+func (s *Scheduler) downloadWithRetry(category string, item content.ContentItem, mediaURL string) (string, error) {
+	var lastErr error
+	delays := []time.Duration{5 * time.Second, 15 * time.Second}
+	for attempt := 0; attempt <= len(delays); attempt++ {
+		filePath, err := s.Video.Download(mediaURL, videoFileName(item))
+		if err == nil {
+			return filePath, nil
+		}
+		lastErr = err
+		if !isTransientMediaError(err) || attempt == len(delays) {
+			break
+		}
+		delay := delays[attempt]
+		log.Printf("[video] transient download failure; retrying in %s category=%s title=%s attempt=%d: %v", delay, category, item.Title, attempt+2, err)
+		s.setChannelJob(category, "retrying", item, 0)
+		time.Sleep(delay)
+		s.setChannelJob(category, "downloading", item, 0)
+	}
+	return "", lastErr
+}
+
+func isTransientMediaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"404 not found", "http 404", "server returned 404",
+		"429 too many requests", "http 429",
+		"server returned 500", "server returned 502", "server returned 503", "server returned 504",
+		"http 500", "http 502", "http 503", "http 504",
+		"connection reset", "connection refused", "timed out", "timeout", "temporarily unavailable",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentItem, seriesKey string, videoMessageID int) error {

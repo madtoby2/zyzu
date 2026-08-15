@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -308,6 +309,22 @@ func TestCaptionTextEquivalentHidesRepeatedIntro(t *testing.T) {
 	}
 	if captionTextEquivalent("测试影片", "这是一段包含具体剧情信息的独立简介") {
 		t.Fatal("meaningful intro should not be hidden")
+	}
+}
+
+func TestTransientMediaError(t *testing.T) {
+	for _, message := range []string{
+		"Server returned 404 Not Found",
+		"HTTP 503",
+		"connection reset by peer",
+		"ffmpeg timed out after 6h",
+	} {
+		if !isTransientMediaError(fmt.Errorf("%s", message)) {
+			t.Fatalf("expected transient error: %s", message)
+		}
+	}
+	if isTransientMediaError(fmt.Errorf("invalid data found when processing input")) {
+		t.Fatal("invalid media data should not be retried as a transient network error")
 	}
 }
 
