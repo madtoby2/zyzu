@@ -202,7 +202,7 @@ func (s *Scheduler) ContentPreview(category string, limit int) ([]ContentPreview
 	if len(activeSources) == 0 {
 		return []ContentPreview{}, nil
 	}
-	agg := content.New(selectContentSources(activeSources, s.Cfg, 3, 3))
+	agg := content.NewPreview(selectContentSources(activeSources, s.Cfg, 3, 3))
 	items, err := agg.FetchLatest()
 	if err != nil {
 		return nil, err

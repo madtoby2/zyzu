@@ -98,9 +98,22 @@ func DedupKey(item ContentItem) string {
 
 // Aggregator fetches content from CMS APIs.
 type Aggregator struct {
-	client  *http.Client
-	sources []store.Station
-	pages   int // how many pages to fetch per source
+	client         *http.Client
+	sources        []store.Station
+	pages          int // how many pages to fetch per source
+	perSourceLimit int // zero means unlimited
+}
+
+// NewPreview creates a bounded aggregator for interactive UI requests. It
+// intentionally scans less than the background collector so a slow CMS API
+// cannot hold the browser connection open for a minute.
+func NewPreview(sources []store.Station) *Aggregator {
+	return &Aggregator{
+		client:         &http.Client{Timeout: 8 * time.Second},
+		sources:        sources,
+		pages:          1,
+		perSourceLimit: 6,
+	}
 }
 
 func New(sources []store.Station) *Aggregator {
@@ -121,6 +134,7 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 			continue
 		}
 
+		acceptedForSource := 0
 		for page := 1; page <= a.pages; page++ {
 			items, err := a.fetchList(src, page)
 			if err != nil {
@@ -128,11 +142,15 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 			}
 
 			for _, item := range items {
+				if a.perSourceLimit > 0 && acceptedForSource >= a.perSourceLimit {
+					break
+				}
 				key := itemKey(src.APIURL, item)
 				if seen[key] {
 					continue
 				}
 				seen[key] = true
+				acceptedForSource++
 
 				ci := ContentItem{
 					Key:       key,
