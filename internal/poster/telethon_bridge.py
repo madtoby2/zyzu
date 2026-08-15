@@ -214,14 +214,14 @@ async def main():
         # Remove duplicate directories created by older versions. Searching
         # the channel is necessary because SQLite only remembers the newest
         # message ID and cannot identify earlier duplicates.
-        async for old_msg in client.iter_messages(entity, limit=500, search='电视剧目录'):
+        async for old_msg in client.iter_messages(entity, limit=2000):
             if '电视剧目录' in (old_msg.raw_text or ''):
                 directory_ids.add(old_msg.id)
         if directory_ids:
-            try:
-                await client.delete_messages(entity, list(directory_ids))
-            except Exception:
-                pass
+            ordered_ids = sorted(directory_ids)
+            for offset in range(0, len(ordered_ids), 100):
+                await client.delete_messages(entity, ordered_ids[offset:offset + 100], revoke=True)
+            print(f"[directory] deleted old directory messages: {ordered_ids}", file=sys.stderr, flush=True)
         msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
         await client.pin_message(entity, msg.id, notify=False)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
