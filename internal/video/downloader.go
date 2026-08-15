@@ -1,6 +1,8 @@
 package video
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -21,11 +23,12 @@ type Downloader struct {
 	WorkDir        string
 	Timeout        int           // optional media seconds per download; zero means full duration
 	RuntimeTimeout time.Duration // wall-clock cap for the ffmpeg process
+	StallTimeout   time.Duration // abort when the media timestamp stops advancing
 }
 
 func New(workDir string) *Downloader {
 	os.MkdirAll(workDir, 0755)
-	return &Downloader{WorkDir: workDir, Timeout: 0, RuntimeTimeout: 6 * time.Hour}
+	return &Downloader{WorkDir: workDir, Timeout: 0, RuntimeTimeout: 6 * time.Hour, StallTimeout: 3 * time.Minute}
 }
 
 // HasComplete reports whether a fully finalized file can be resumed for upload.
@@ -59,7 +62,12 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 	args := []string{
 		"-y",                 // overwrite
 		"-loglevel", "error", // quiet
+		"-nostats",
+		"-progress", "pipe:1",
 		"-timeout", "30000000", // 30s socket timeout (microseconds)
+		"-reconnect", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "5",
 		"-allowed_extensions", "ALL", // some HLS providers disguise media as images
 		"-allowed_segment_extensions", "ALL",
 		"-extension_picky", "0",
@@ -81,16 +89,83 @@ func (d *Downloader) Download(m3u8URL, filename string) (string, error) {
 		ctx, cancel = context.WithTimeout(ctx, d.RuntimeTimeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	cmd.Stderr = nil
-	output, err := cmd.CombinedOutput()
+	processCtx, stopProcess := context.WithCancel(ctx)
+	defer stopProcess()
+	cmd := exec.CommandContext(processCtx, "ffmpeg", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg progress pipe: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start ffmpeg: %w", err)
+	}
+
+	advanced := make(chan struct{}, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		lastTimestamp := ""
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "out_time_us=") && !strings.HasPrefix(line, "out_time_ms=") {
+				continue
+			}
+			if line == lastTimestamp {
+				continue
+			}
+			lastTimestamp = line
+			select {
+			case advanced <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	wait := make(chan error, 1)
+	go func() { wait <- cmd.Wait() }()
+
+	var stallTimer *time.Timer
+	var stall <-chan time.Time
+	if d.StallTimeout > 0 {
+		stallTimer = time.NewTimer(d.StallTimeout)
+		stall = stallTimer.C
+		defer stallTimer.Stop()
+	}
+	for {
+		select {
+		case err = <-wait:
+			goto finished
+		case <-advanced:
+			if stallTimer != nil {
+				if !stallTimer.Stop() {
+					select {
+					case <-stallTimer.C:
+					default:
+					}
+				}
+				stallTimer.Reset(d.StallTimeout)
+			}
+		case <-stall:
+			stopProcess()
+			<-wait
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("ffmpeg stalled with no media progress for %s: %s", d.StallTimeout, strings.TrimSpace(stderr.String()))
+		case <-ctx.Done():
+			stopProcess()
+			<-wait
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("ffmpeg timed out after %s", d.RuntimeTimeout)
+		}
+	}
+
+finished:
 	if err != nil {
 		// Clean up partial file
 		os.Remove(tmpPath)
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("ffmpeg timed out after %s", d.RuntimeTimeout)
 		}
-		return "", fmt.Errorf("ffmpeg: %v: %s", err, string(output))
+		return "", fmt.Errorf("ffmpeg: %v: %s", err, stderr.String())
 	}
 
 	info, err := os.Stat(tmpPath)
