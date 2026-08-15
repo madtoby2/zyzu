@@ -39,7 +39,7 @@ func (c *Client) Generate(ctx context.Context, item content.ContentItem, categor
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.85,
-		"max_tokens":  800,
+		"max_tokens":  1400,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
