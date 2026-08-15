@@ -112,7 +112,7 @@ func NewPreview(sources []store.Station, category string) *Aggregator {
 	return &Aggregator{
 		client:          &http.Client{Timeout: 8 * time.Second},
 		sources:         sources,
-		pages:           1,
+		pages:           3,
 		perSourceLimit:  6,
 		previewCategory: strings.TrimSpace(strings.ToLower(category)),
 	}
