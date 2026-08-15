@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/madtoby2/zyzu/internal/captionai"
 	"github.com/madtoby2/zyzu/internal/config"
 	"github.com/madtoby2/zyzu/internal/content"
 	"github.com/madtoby2/zyzu/internal/poster"
@@ -34,6 +36,7 @@ type Scheduler struct {
 	Agg       *content.Aggregator
 	Video     *video.Downloader
 	Translate *translator.Translator
+	CaptionAI *captionai.Client
 
 	mu           sync.Mutex
 	scheduledMu  sync.Mutex
@@ -103,6 +106,7 @@ func New(st *store.Store, scr *scraper.Scraper, p *poster.Poster, cfg *config.Co
 		Cfg:          cfg,
 		Video:        video.New(workDir),
 		Translate:    translator.New(st),
+		CaptionAI:    captionai.New(os.Getenv("ZYZU_CAPTION_AI_BASE_URL"), os.Getenv("ZYZU_CAPTION_AI_KEY"), os.Getenv("ZYZU_CAPTION_AI_MODEL")),
 		categoryRuns: make(map[string]bool),
 		categoryLast: make(map[string]time.Time),
 		channelJobs:  make(map[string]ChannelJobStatus),
@@ -763,6 +767,18 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			captionItem := episodeItem
 			captionItem.Title = s.Translate.Text(captionItem.Title)
 			captionItem.Intro = s.Translate.Text(captionItem.Intro)
+			if isAdultCategory(category) && s.CaptionAI.Enabled() {
+				aiCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				aiCopy, aiErr := s.CaptionAI.Generate(aiCtx, captionItem, category)
+				cancel()
+				if aiErr != nil {
+					log.Printf("[caption-ai] fallback category=%s title=%s: %v", category, item.Title, aiErr)
+					_ = s.Store.LogEvent("warn", fmt.Sprintf("AI 文案生成失败，已使用频道模板：%s · %s", category, item.Title))
+				} else {
+					captionItem.AICopy = aiCopy
+					log.Printf("[caption-ai] generated category=%s title=%s model=%s", category, item.Title, s.CaptionAI.Model)
+				}
+			}
 			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), captionItem, category)
 			videoMessageID, err := s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
 			if err != nil {
@@ -1170,6 +1186,15 @@ func stationCategoryMatches(channelCategory, stationCategory string) bool {
 	}
 }
 
+func isAdultCategory(category string) bool {
+	switch strings.TrimSpace(strings.ToLower(category)) {
+	case "adult", "成人", "av":
+		return true
+	default:
+		return false
+	}
+}
+
 func formatVideoCaption(format string, item content.ContentItem, routeCategory string) string {
 	if strings.TrimSpace(format) == "" {
 		format = "🎬 {code}\n{channel}\n{title}\n简介：{intro}\n分类：{category}\n更新时间：{updated_at}"
@@ -1211,6 +1236,7 @@ func formatVideoCaption(format string, item content.ContentItem, routeCategory s
 		"{source_url}": escapeHTML(item.SourceURL), "{intro}": escapeHTML(item.Intro),
 		"{cover}": "", "{cover_url}": escapeHTML(item.CoverURL),
 		"{updated_at}": escapeHTML(item.VodTime),
+		"{ai_copy}":    escapeHTML(item.AICopy),
 	}
 	return cleanCaptionTemplate(format, values)
 }

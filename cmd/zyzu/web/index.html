@@ -282,7 +282,7 @@ function addScheduledForChannel(category,id){closeChannelDetail();switchTab('sch
 function defaultVideoFormatFor(category){
   try{category=decodeURIComponent(category)}catch(e){}
   const c=String(category||'').toLowerCase();
-  if(['成人','adult','av'].includes(c))return '🔞 <b>{title}</b>\n\n💋 私密放送 · 今夜只为懂的人\n✨ 主演：{actor}\n🏷️ 标签：{class} / {tags}\n⏱️ 时长：{duration}\n⭐ 推荐：{rating}\n\n📝 {intro}\n\n#AV精选 #今夜必看';
+  if(['成人','adult','av'].includes(c))return '🔞 <b>{title}</b>\n\n💋 {ai_copy}\n✨ 主演：{actor}\n🏷️ 标签：{class} / {tags}\n⏱️ 时长：{duration}\n⭐ 推荐：{rating}\n\n📝 {intro}\n\n#AV精选 #今夜必看';
   if(['电影','movie'].includes(c))return '{title}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
   if(['电视剧','电视','tv'].includes(c))return '{title} · {episode}\n\n简介：{intro}\n类型：{type} / {class}\n主演：{actor}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}';
   if(['动漫','anime'].includes(c))return '{title} · {episode}\n\n简介：{intro}\n标签：{tags}\n地区：{area}\n年份：{year}\n进度：第 {episode_index} / {episode_total} 集\n状态：{remarks}\n更新：{updated_at}';
@@ -291,7 +291,7 @@ function defaultVideoFormatFor(category){
   return document.getElementById('cfg-video-format')?.value||'{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n演员：{actor}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}';
 }
 function videoVariablesFor(category){
-  const base=[['{title}','标题'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{tags}','标签组'],['{actor}','演员/主演/嘉宾'],['{director}','导演'],['{area}','地区'],['{language}','语言'],['{year}','年份'],['{score}','接口真实评分'],['{rating}','真实评分；没有则随机'],['{random_score}','随机评分'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间'],['{source}','资源站名称'],['{code}','资源ID/番号'],['{raw_category}','接口原分类'],['{emoji}','随机图标'],['{random}','随机6位码'],['{random:8}','随机指定长度']];
+  const base=[['{title}','标题'],['{ai_copy}','AI 生成短文案'],['{intro}','简介'],['{category}','频道分类'],['{type}','接口类型'],['{class}','标签/子类'],['{tags}','标签组'],['{actor}','演员/主演/嘉宾'],['{director}','导演'],['{area}','地区'],['{language}','语言'],['{year}','年份'],['{score}','接口真实评分'],['{rating}','真实评分；没有则随机'],['{random_score}','随机评分'],['{remarks}','备注'],['{duration}','时长'],['{updated_at}','更新时间'],['{source}','资源站名称'],['{code}','资源ID/番号'],['{raw_category}','接口原分类'],['{emoji}','随机图标'],['{random}','随机6位码'],['{random:8}','随机指定长度']];
   const c=String(category||'').toLowerCase();
   if(['电视剧','电视','tv','动漫','anime','综艺','variety','纪录片','documentary'].includes(c))return [...base,[ '{episode}','集名/期名' ],[ '{episode_index}','当前集序号' ],[ '{episode_total}','总集数' ]];
   return [...base,[ '{episode}','集名/期名（非剧集为空）' ],[ '{episode_index}','当前集序号（非剧集为0）' ],[ '{episode_total}','总集数（非剧集为0）' ]];

@@ -64,6 +64,7 @@ type ContentItem struct {
 	Language     string   `json:"language"`
 	Year         string   `json:"year"`
 	Score        string   `json:"score"`
+	AICopy       string   `json:"ai_copy,omitempty"`
 	Duration     string   `json:"duration"`
 	Remarks      string   `json:"remarks"`
 	Category     string   `json:"category"`

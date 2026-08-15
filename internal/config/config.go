@@ -98,7 +98,7 @@ func Default() *Config {
 }
 
 func defaultVideoFormats() map[string]string {
-	adultFormat := "🔞 <b>{title}</b>\n\n💋 私密放送 · 今夜只为懂的人\n✨ 主演：{actor}\n🏷️ 标签：{class} / {tags}\n⏱️ 时长：{duration}\n⭐ 推荐：{rating}\n\n📝 {intro}\n\n#AV精选 #今夜必看"
+	adultFormat := "🔞 <b>{title}</b>\n\n💋 {ai_copy}\n✨ 主演：{actor}\n🏷️ 标签：{class} / {tags}\n⏱️ 时长：{duration}\n⭐ 推荐：{rating}\n\n📝 {intro}\n\n#AV精选 #今夜必看"
 	return map[string]string{
 		"default":     "{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
 		"综合影视":        "{title}\n\n简介：{intro}\n类型：{type} / {class}\n标签：{tags}\n地区：{area}\n年份：{year}\n状态：{remarks}\n更新：{updated_at}",
@@ -142,8 +142,9 @@ func mergeVideoFormatDefaults(formats map[string]string) map[string]string {
 		return defaults
 	}
 	legacyAdult := "{title}\n\n简介：{intro}\n标签：{class}\n演员：{actor}\n时长：{duration}\n更新：{updated_at}"
+	previousAdult := "🔞 <b>{title}</b>\n\n💋 私密放送 · 今夜只为懂的人\n✨ 主演：{actor}\n🏷️ 标签：{class} / {tags}\n⏱️ 时长：{duration}\n⭐ 推荐：{rating}\n\n📝 {intro}\n\n#AV精选 #今夜必看"
 	for _, category := range []string{"成人", "adult"} {
-		if strings.TrimSpace(formats[category]) == legacyAdult {
+		if current := strings.TrimSpace(formats[category]); current == legacyAdult || current == previousAdult {
 			formats[category] = defaults[category]
 		}
 	}
