@@ -185,26 +185,39 @@ async def main():
     entity = await client.get_input_entity(chat_id) if chat_id is not None else None
     if req.get('action') == 'create_directory':
         msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
-        await client.pin_message(entity, msg.id, notify=False)
+        try:
+            await client.pin_message(entity, msg.id, notify=False)
+        except Exception as exc:
+            if exc.__class__.__name__ not in ('FloodWaitError', 'FloodWait'):
+                raise
+            print(f"[directory] pin rate-limited; will retry later: {exc}", file=sys.stderr, flush=True)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'edit_directory':
         message_id = int(req['message_id'])
+        changed = True
         try:
             msg = await client.edit_message(entity, message_id, req['text'], parse_mode='html', link_preview=False)
         except Exception as exc:
             if exc.__class__.__name__ != 'MessageNotModifiedError':
                 raise
+            changed = False
             msg = await client.get_messages(entity, ids=message_id)
             if not msg:
                 raise RuntimeError('directory message no longer exists')
         # Telegram may leave an already-pinned message in its old position.
         # Unpin then pin after every episode update so the directory becomes
         # the first item in the channel's pinned-message list.
+        if changed:
+            try:
+                await client.unpin_message(entity, msg.id)
+            except Exception:
+                pass
         try:
-            await client.unpin_message(entity, msg.id)
-        except Exception:
-            pass
-        await client.pin_message(entity, msg.id, notify=False)
+            await client.pin_message(entity, msg.id, notify=False)
+        except Exception as exc:
+            if exc.__class__.__name__ not in ('FloodWaitError', 'FloodWait'):
+                raise
+            print(f"[directory] pin rate-limited; will retry later: {exc}", file=sys.stderr, flush=True)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'recreate_directory':
         old_message_id = int(req.get('message_id') or 0)
@@ -223,7 +236,12 @@ async def main():
                 await client.delete_messages(entity, ordered_ids[offset:offset + 100], revoke=True)
             print(f"[directory] deleted old directory messages: {ordered_ids}", file=sys.stderr, flush=True)
         msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
-        await client.pin_message(entity, msg.id, notify=False)
+        try:
+            await client.pin_message(entity, msg.id, notify=False)
+        except Exception as exc:
+            if exc.__class__.__name__ not in ('FloodWaitError', 'FloodWait'):
+                raise
+            print(f"[directory] pin rate-limited; will retry later: {exc}", file=sys.stderr, flush=True)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'upload_video':
         cover_path = req.get('cover_path')
