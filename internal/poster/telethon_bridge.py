@@ -227,7 +227,7 @@ async def main():
         # Remove duplicate directories created by older versions. Searching
         # the channel is necessary because SQLite only remembers the newest
         # message ID and cannot identify earlier duplicates.
-        async for old_msg in client.iter_messages(entity, limit=2000):
+        async for old_msg in client.iter_messages(entity, limit=600):
             if '电视剧目录' in (old_msg.raw_text or ''):
                 directory_ids.add(old_msg.id)
         if directory_ids:
