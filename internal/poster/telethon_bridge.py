@@ -188,14 +188,38 @@ async def main():
         await client.pin_message(entity, msg.id, notify=False)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'edit_directory':
-        msg = await client.edit_message(entity, int(req['message_id']), req['text'], parse_mode='html', link_preview=False)
+        message_id = int(req['message_id'])
+        try:
+            msg = await client.edit_message(entity, message_id, req['text'], parse_mode='html', link_preview=False)
+        except Exception as exc:
+            if exc.__class__.__name__ != 'MessageNotModifiedError':
+                raise
+            msg = await client.get_messages(entity, ids=message_id)
+            if not msg:
+                raise RuntimeError('directory message no longer exists')
+        # Telegram may leave an already-pinned message in its old position.
+        # Unpin then pin after every episode update so the directory becomes
+        # the first item in the channel's pinned-message list.
+        try:
+            await client.unpin_message(entity, msg.id)
+        except Exception:
+            pass
         await client.pin_message(entity, msg.id, notify=False)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'recreate_directory':
         old_message_id = int(req.get('message_id') or 0)
+        directory_ids = set()
         if old_message_id > 0:
+            directory_ids.add(old_message_id)
+        # Remove duplicate directories created by older versions. Searching
+        # the channel is necessary because SQLite only remembers the newest
+        # message ID and cannot identify earlier duplicates.
+        async for old_msg in client.iter_messages(entity, limit=500, search='电视剧目录'):
+            if '电视剧目录' in (old_msg.raw_text or ''):
+                directory_ids.add(old_msg.id)
+        if directory_ids:
             try:
-                await client.delete_messages(entity, [old_message_id])
+                await client.delete_messages(entity, list(directory_ids))
             except Exception:
                 pass
         msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
