@@ -127,10 +127,14 @@ func (p *Poster) telethonJSON(payload interface{}) (int, error) {
 	}
 	cmd := exec.Command(python, "internal/poster/telethon_bridge.py")
 	cmd.Stdin = bytes.NewReader(data)
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
 	if err != nil {
-		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(string(out)))
+		return 0, fmt.Errorf("telethon: %s", strings.TrimSpace(stderr.String()+stdout.String()))
 	}
+	out := stdout.Bytes()
 	var result struct {
 		MessageID int    `json:"message_id"`
 		Error     string `json:"error"`
