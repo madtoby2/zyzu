@@ -191,6 +191,16 @@ async def main():
         msg = await client.edit_message(entity, int(req['message_id']), req['text'], parse_mode='html', link_preview=False)
         await client.pin_message(entity, msg.id, notify=False)
         print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
+    if req.get('action') == 'recreate_directory':
+        old_message_id = int(req.get('message_id') or 0)
+        if old_message_id > 0:
+            try:
+                await client.delete_messages(entity, [old_message_id])
+            except Exception:
+                pass
+        msg = await client.send_message(entity, req['text'], parse_mode='html', link_preview=False)
+        await client.pin_message(entity, msg.id, notify=False)
+        print(json.dumps({'message_id': msg.id})); await client.disconnect(); return
     if req.get('action') == 'upload_video':
         cover_path = req.get('cover_path')
         thumb_path = req.get('thumb_path')

@@ -128,7 +128,11 @@ func (s *Scheduler) Start() error {
 	if _, err := s.cron.AddFunc("0 * * * * *", s.runScheduledMessages); err != nil {
 		return fmt.Errorf("add scheduled messages cron: %w", err)
 	}
+	if _, err := s.cron.AddFunc("0 */5 * * * *", func() { s.RefreshSeriesDirectory("电视剧", false) }); err != nil {
+		return fmt.Errorf("add directory maintenance cron: %w", err)
+	}
 	s.cron.Start()
+	go s.RefreshSeriesDirectory("电视剧", false)
 	log.Printf("[scheduler] scrape=%s content=%s mode=%s", s.Cfg.ScrapeCron, s.Cfg.ContentCron, s.Cfg.ContentMode)
 	return nil
 }
@@ -860,8 +864,48 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 	if err != nil {
 		return err
 	}
-	if directoryMessageID == 0 {
+	if messageID != directoryMessageID {
 		return s.Store.SetSeriesDirectoryMessage(category, channelID, messageID)
+	}
+	return nil
+}
+
+func (s *Scheduler) RefreshSeriesDirectory(category string, recreate bool) error {
+	channelIDs := s.Cfg.ChannelsFor(category)
+	if len(channelIDs) == 0 {
+		return fmt.Errorf("channel is not configured for %s", category)
+	}
+	for _, channelID := range channelIDs {
+		entries, err := s.Store.SeriesDirectory(category, channelID, 80)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		messageID := 0
+		for _, entry := range entries {
+			if entry.DirectoryMsgID > 0 {
+				messageID = entry.DirectoryMsgID
+				break
+			}
+		}
+		text := buildSeriesDirectoryText(channelID, entries)
+		var nextID int
+		if recreate {
+			nextID, err = s.Poster.RecreatePinnedDirectory(text, channelID, messageID)
+		} else {
+			nextID, err = s.Poster.UpsertPinnedDirectory(text, channelID, messageID)
+		}
+		if err != nil {
+			return err
+		}
+		if nextID != messageID {
+			if err := s.Store.SetSeriesDirectoryMessage(category, channelID, nextID); err != nil {
+				return err
+			}
+		}
+		log.Printf("[directory] maintained category=%s channel=%d message=%d recreate=%t", category, channelID, nextID, recreate)
 	}
 	return nil
 }

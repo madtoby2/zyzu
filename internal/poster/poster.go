@@ -88,8 +88,25 @@ func (p *Poster) UpsertPinnedDirectory(text string, chatID int64, messageID int)
 	if messageID > 0 {
 		action = "edit_directory"
 	}
-	return p.telethonJSON(map[string]interface{}{
+	result, err := p.telethonJSON(map[string]interface{}{
 		"action": action, "chat_id": chatID, "text": text, "message_id": messageID,
+	})
+	if err == nil || messageID == 0 {
+		return result, err
+	}
+	// A directory may be manually deleted while its message ID remains in
+	// SQLite. Recreate it so future episode updates recover automatically.
+	return p.telethonJSON(map[string]interface{}{
+		"action": "create_directory", "chat_id": chatID, "text": text,
+	})
+}
+
+func (p *Poster) RecreatePinnedDirectory(text string, chatID int64, messageID int) (int, error) {
+	if chatID == 0 || strings.TrimSpace(text) == "" {
+		return 0, errors.New("directory channel or text is empty")
+	}
+	return p.telethonJSON(map[string]interface{}{
+		"action": "recreate_directory", "chat_id": chatID, "text": text, "message_id": messageID,
 	})
 }
 

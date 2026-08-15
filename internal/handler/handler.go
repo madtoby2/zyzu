@@ -59,6 +59,7 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/api/channels", h.addChannel)
 		r.Delete("/api/channels", h.deleteChannel)
 		r.Post("/api/channels/{category}/trigger", h.triggerChannelContent)
+		r.Post("/api/channels/{category}/directory/rebuild", h.rebuildChannelDirectory)
 		r.Post("/api/channels/{category}/skip", h.skipChannelItem)
 		r.Put("/api/channels/{category}/policy", h.updateChannelPolicy)
 		r.Post("/api/telethon/request-code", h.telethonRequestCode)
@@ -617,6 +618,20 @@ func (h *Handler) triggerChannelContent(w http.ResponseWriter, r *http.Request) 
 	h.sched.RunContentCategoryNow(category)
 	h.hub.Broadcast("content_triggered", map[string]string{"status": "started", "category": category})
 	jsonOK(w, map[string]string{"status": "channel content fetch started"})
+}
+
+func (h *Handler) rebuildChannelDirectory(w http.ResponseWriter, r *http.Request) {
+	category, err := url.PathUnescape(chi.URLParam(r, "category"))
+	if err != nil || strings.TrimSpace(category) == "" {
+		jsonError(w, "invalid category", http.StatusBadRequest)
+		return
+	}
+	if err := h.sched.RefreshSeriesDirectory(category, true); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = h.store.LogEvent("ok", fmt.Sprintf("频道“%s”目录已重新创建并置顶", category))
+	jsonOK(w, map[string]string{"status": "directory rebuilt and pinned"})
 }
 
 func (h *Handler) skipChannelItem(w http.ResponseWriter, r *http.Request) {
