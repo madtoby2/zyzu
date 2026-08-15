@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log"
+	urlpkg "net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -703,6 +704,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 		seriesMode := policy.AllowSeries && shouldPostSeriesEpisodes(category, item)
 		seriesPosted := 0
 		candidates := episodeCandidates(item.Episodes, seriesMode)
+		if len(candidates) == 0 {
+			log.Printf("[video] skipped category=%s source=%s title=%s: no usable playback URL in %d entries", category, item.Source, item.Title, len(item.Episodes))
+			continue
+		}
 		for _, candidate := range candidates {
 			if seriesMode && policy.PerSeriesLimit > 0 && seriesPosted >= policy.PerSeriesLimit {
 				break
@@ -936,8 +941,15 @@ func episodeCandidates(episodes []string, collapseAlternates bool) []episodeCand
 }
 
 func splitEpisode(raw string) (name, url string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", false
+	}
 	parts := strings.SplitN(raw, "$", 2)
-	if len(parts) != 2 {
+	if len(parts) == 1 {
+		if parsed, err := urlpkg.ParseRequestURI(raw); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			return "正片", raw, true
+		}
 		return "", "", false
 	}
 	name = strings.TrimSpace(parts[0])

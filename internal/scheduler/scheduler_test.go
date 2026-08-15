@@ -272,6 +272,16 @@ func TestEpisodeCandidatesKeepAlternateURLsForSameEpisode(t *testing.T) {
 	}
 }
 
+func TestEpisodeCandidatesAcceptBarePlaybackURL(t *testing.T) {
+	got := episodeCandidates([]string{"https://example.test/video/index.m3u8"}, false)
+	if len(got) != 1 {
+		t.Fatalf("episodeCandidates() len = %d, want 1", len(got))
+	}
+	if got[0].Name != "正片" || len(got[0].URLs) != 1 || got[0].URLs[0] != "https://example.test/video/index.m3u8" {
+		t.Fatalf("candidate = %#v, want bare URL as 正片", got[0])
+	}
+}
+
 func TestEpisodeCaptionVariables(t *testing.T) {
 	item := content.ContentItem{
 		Title:        "测试剧",
