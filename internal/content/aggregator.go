@@ -98,21 +98,23 @@ func DedupKey(item ContentItem) string {
 
 // Aggregator fetches content from CMS APIs.
 type Aggregator struct {
-	client         *http.Client
-	sources        []store.Station
-	pages          int // how many pages to fetch per source
-	perSourceLimit int // zero means unlimited
+	client          *http.Client
+	sources         []store.Station
+	pages           int // how many pages to fetch per source
+	perSourceLimit  int // zero means unlimited
+	previewCategory string
 }
 
 // NewPreview creates a bounded aggregator for interactive UI requests. It
 // intentionally scans less than the background collector so a slow CMS API
 // cannot hold the browser connection open for a minute.
-func NewPreview(sources []store.Station) *Aggregator {
+func NewPreview(sources []store.Station, category string) *Aggregator {
 	return &Aggregator{
-		client:         &http.Client{Timeout: 8 * time.Second},
-		sources:        sources,
-		pages:          1,
-		perSourceLimit: 6,
+		client:          &http.Client{Timeout: 8 * time.Second},
+		sources:         sources,
+		pages:           1,
+		perSourceLimit:  6,
+		previewCategory: strings.TrimSpace(strings.ToLower(category)),
 	}
 }
 
@@ -150,7 +152,6 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					continue
 				}
 				seen[key] = true
-				acceptedForSource++
 
 				ci := ContentItem{
 					Key:       key,
@@ -173,6 +174,10 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 					VodTime:   item.VodTime,
 					Intro:     cleanIntro(item.VodContent, item.VodName, item.VodID),
 				}
+				if a.previewCategory != "" && !previewCategoryMatches(a.previewCategory, ci.Category) {
+					continue
+				}
+				acceptedForSource++
 
 				// Fetch detail for play URLs (best-effort)
 				detail, err := a.fetchDetail(src, item.VodID)
@@ -224,6 +229,23 @@ func (a *Aggregator) FetchLatest() ([]ContentItem, error) {
 	})
 
 	return all, nil
+}
+
+func previewCategoryMatches(expected, actual string) bool {
+	expected = strings.TrimSpace(strings.ToLower(expected))
+	actual = strings.TrimSpace(strings.ToLower(actual))
+	aliases := map[string][]string{
+		"成人": {"成人", "adult"}, "adult": {"成人", "adult"}, "av": {"成人", "adult"},
+		"电影": {"电影", "movie"}, "movie": {"电影", "movie"},
+		"电视剧": {"电视剧", "电视", "tv"}, "电视": {"电视剧", "电视", "tv"}, "tv": {"电视剧", "电视", "tv"},
+		"动漫": {"动漫", "动画", "anime"}, "anime": {"动漫", "动画", "anime"},
+	}
+	for _, candidate := range aliases[expected] {
+		if actual == candidate {
+			return true
+		}
+	}
+	return expected == actual
 }
 
 func scalarString(value any) string {
