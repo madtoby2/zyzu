@@ -49,6 +49,15 @@ func TestIntroUsesBingSessionAndPersistentCache(t *testing.T) {
 	}
 }
 
+func TestTextKeepsCodesAndChineseTitles(t *testing.T) {
+	tr := New(nil)
+	for _, value := range []string{"MIDE-777", "青春碎片", "2026"} {
+		if got := tr.Text(value); got != value {
+			t.Fatalf("Text(%q)=%q", value, got)
+		}
+	}
+}
+
 func TestIntroKeepsChineseAndTooLongText(t *testing.T) {
 	tr := New(nil)
 	if got := tr.Intro("这是一段中文简介"); got != "这是一段中文简介" {

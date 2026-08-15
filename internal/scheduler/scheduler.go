@@ -755,8 +755,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 			}
 			downloadedSize := fileSize(filePath)
 			s.setChannelJob(category, "uploading", episodeItem, downloadedSize)
-			episodeItem.Intro = s.Translate.Intro(episodeItem.Intro)
-			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), episodeItem, category)
+			captionItem := episodeItem
+			captionItem.Title = s.Translate.Text(captionItem.Title)
+			captionItem.Intro = s.Translate.Text(captionItem.Intro)
+			caption := formatVideoCaption(s.Cfg.VideoFormatFor(category), captionItem, category)
 			videoMessageID, err := s.Poster.PostVideo(filePath, caption, category, episodeItem.CoverURL, s.Cfg.SeparateCover)
 			if err != nil {
 				log.Printf("[video] upload %s (%s): %v", item.Title, candidate.Name, err)
@@ -786,7 +788,10 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 				log.Printf("[content] record %s (%s): %v", item.Title, candidate.Name, err)
 			}
 			if seriesMode {
-				if directoryErr := s.updateSeriesDirectory(category, episodeItem, videoMessageID); directoryErr != nil {
+				directoryItem := episodeItem
+				directoryItem.Title = s.Translate.Text(directoryItem.Title)
+				seriesKey := seriesIdentity(episodeItem.Title) + "\x00" + strings.TrimSpace(episodeItem.Year)
+				if directoryErr := s.updateSeriesDirectory(category, directoryItem, seriesKey, videoMessageID); directoryErr != nil {
 					log.Printf("[directory] update %s (%s): %v", item.Title, candidate.Name, directoryErr)
 					_ = s.Store.LogEvent("warn", fmt.Sprintf("电视剧目录更新失败：%s · %s", item.Title, compactError(directoryErr)))
 				}
@@ -802,12 +807,11 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 	return posted
 }
 
-func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentItem, videoMessageID int) error {
+func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentItem, seriesKey string, videoMessageID int) error {
 	channelID := s.Cfg.PickChannel(category)
 	if channelID == 0 || videoMessageID <= 0 {
 		return fmt.Errorf("channel or video message is unavailable")
 	}
-	key := seriesIdentity(item.Title) + "\x00" + strings.TrimSpace(item.Year)
 	entries, err := s.Store.SeriesDirectory(category, channelID, 80)
 	if err != nil {
 		return err
@@ -820,7 +824,7 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 		}
 	}
 	if err := s.Store.UpsertSeriesDirectory(store.SeriesDirectoryEntry{
-		Category: category, ChannelID: channelID, SeriesKey: key, Title: item.Title,
+		Category: category, ChannelID: channelID, SeriesKey: seriesKey, Title: item.Title,
 		Year: item.Year, Episode: item.EpisodeName, VideoMessageID: videoMessageID,
 		DirectoryMsgID: directoryMessageID, Episodes: []store.SeriesDirectoryEpisode{{Episode: item.EpisodeName, EpisodeIndex: item.EpisodeIndex, VideoMessageID: videoMessageID}},
 	}); err != nil {

@@ -57,6 +57,12 @@ func New(cache PersistentCache) *Translator {
 }
 
 func (t *Translator) Intro(text string) string {
+	return t.Text(text)
+}
+
+// Text translates display metadata such as titles and introductions. Callers
+// should keep the original value for deduplication and database identities.
+func (t *Translator) Text(text string) string {
 	text = strings.TrimSpace(text)
 	source, ok := foreignLanguage(text)
 	if !ok {
