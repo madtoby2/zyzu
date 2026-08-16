@@ -905,10 +905,14 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 		return err
 	}
 	text := buildSeriesDirectoryText(channelID, entries)
-	messageID, err := s.Poster.UpsertPinnedDirectory(text, channelID, directoryMessageID)
+	// The TV directory must remain the newest message after every episode.
+	// Editing the existing pinned message leaves it at its original position,
+	// so delete the old directory and publish a fresh one after the upload.
+	messageID, err := s.Poster.RecreatePinnedDirectory(text, channelID, directoryMessageID)
 	if err != nil {
 		return err
 	}
+	log.Printf("[directory] recreated after episode category=%s channel=%d old=%d new=%d", category, channelID, directoryMessageID, messageID)
 	if messageID != directoryMessageID {
 		return s.Store.SetSeriesDirectoryMessage(category, channelID, messageID)
 	}
