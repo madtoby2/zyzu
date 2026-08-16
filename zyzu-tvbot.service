@@ -1,7 +1,6 @@
 [Unit]
 Description=ZYZU TV archive bot
-After=network-online.target zyzu.service
-Wants=network-online.target
+After=network.target zyzu.service
 
 [Service]
 Type=simple
