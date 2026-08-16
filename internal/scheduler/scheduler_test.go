@@ -345,3 +345,16 @@ func TestFormatVideoCaptionRatingFallsBackToRandomScore(t *testing.T) {
 		t.Fatalf("rating fallback = %q", got)
 	}
 }
+
+func TestIsCompletedSeries(t *testing.T) {
+	for _, value := range []string{"已完结", "全24集", "全集", "Completed"} {
+		if !isCompletedSeries(value, "") {
+			t.Fatalf("expected completed: %q", value)
+		}
+	}
+	for _, value := range []string{"更新至第12集", "连载中", "第03集"} {
+		if isCompletedSeries(value, "") {
+			t.Fatalf("expected ongoing: %q", value)
+		}
+	}
+}

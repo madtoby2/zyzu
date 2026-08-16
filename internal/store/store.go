@@ -74,6 +74,8 @@ type SeriesDirectoryEntry struct {
 	SeriesKey      string
 	Title          string
 	Year           string
+	Remarks        string
+	Completed      bool
 	Episode        string
 	VideoMessageID int
 	DirectoryMsgID int
@@ -229,6 +231,14 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
+	// Preserve series metadata for the live-directory/archive split. SQLite
+	// lacks ADD COLUMN IF NOT EXISTS, so duplicate-column errors are harmless.
+	if _, alterErr := s.db.Exec("ALTER TABLE series_directory ADD COLUMN remarks TEXT DEFAULT ''"); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
+		return alterErr
+	}
+	if _, alterErr := s.db.Exec("ALTER TABLE series_directory ADD COLUMN completed INTEGER DEFAULT 0"); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
+		return alterErr
+	}
 	// Keep known migrated endpoints usable after an interface list refresh.
 	_, err = s.db.Exec("UPDATE stations SET api_url=? WHERE api_url IN (?, ?)", "https://jyzyapi.com/provide/vod/", "https://api.jyzy.com/api.php/provide/vod", "https://api.jyzy.com/api.php/provide/vod/")
 	if err == nil {
@@ -275,14 +285,17 @@ func (s *Store) UpsertSeriesDirectory(entry SeriesDirectoryEntry) error {
 	}
 	defer tx.Rollback()
 	_, err = tx.Exec(`INSERT INTO series_directory
-		(category, channel_id, series_key, title, year, episode, video_message_id, directory_message_id, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		(category, channel_id, series_key, title, year, remarks, completed, episode, video_message_id, directory_message_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(category, channel_id, series_key) DO UPDATE SET
-		title=excluded.title, year=excluded.year, episode=excluded.episode,
+		title=excluded.title, year=excluded.year,
+		remarks=CASE WHEN excluded.remarks <> '' THEN excluded.remarks ELSE series_directory.remarks END,
+		completed=CASE WHEN excluded.completed=1 THEN 1 ELSE series_directory.completed END,
+		episode=excluded.episode,
 		video_message_id=excluded.video_message_id,
 		directory_message_id=CASE WHEN excluded.directory_message_id > 0 THEN excluded.directory_message_id ELSE series_directory.directory_message_id END,
 		updated_at=CURRENT_TIMESTAMP`, entry.Category, entry.ChannelID, entry.SeriesKey,
-		entry.Title, entry.Year, entry.Episode, entry.VideoMessageID, entry.DirectoryMsgID)
+		entry.Title, entry.Year, entry.Remarks, entry.Completed, entry.Episode, entry.VideoMessageID, entry.DirectoryMsgID)
 	if err != nil {
 		return err
 	}
@@ -306,9 +319,9 @@ func (s *Store) SeriesDirectory(category string, channelID int64, limit int) ([]
 	if limit <= 0 || limit > 100 {
 		limit = 80
 	}
-	rows, err := s.db.Query(`SELECT category, channel_id, series_key, title, year, episode,
+	rows, err := s.db.Query(`SELECT category, channel_id, series_key, title, year, remarks, completed, episode,
 		video_message_id, directory_message_id, updated_at FROM series_directory
-		WHERE category=? AND channel_id=? ORDER BY updated_at DESC LIMIT ?`, category, channelID, limit)
+		WHERE category=? AND channel_id=? AND completed=0 ORDER BY updated_at DESC LIMIT ?`, category, channelID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +330,7 @@ func (s *Store) SeriesDirectory(category string, channelID int64, limit int) ([]
 	for rows.Next() {
 		var entry SeriesDirectoryEntry
 		if err := rows.Scan(&entry.Category, &entry.ChannelID, &entry.SeriesKey, &entry.Title,
-			&entry.Year, &entry.Episode, &entry.VideoMessageID, &entry.DirectoryMsgID, &entry.UpdatedAt); err != nil {
+			&entry.Year, &entry.Remarks, &entry.Completed, &entry.Episode, &entry.VideoMessageID, &entry.DirectoryMsgID, &entry.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, entry)

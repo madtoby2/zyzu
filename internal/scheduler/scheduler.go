@@ -882,7 +882,7 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 	if channelID == 0 || videoMessageID <= 0 {
 		return fmt.Errorf("channel or video message is unavailable")
 	}
-	entries, err := s.Store.SeriesDirectory(category, channelID, 80)
+	entries, err := s.Store.SeriesDirectory(category, channelID, 20)
 	if err != nil {
 		return err
 	}
@@ -895,12 +895,13 @@ func (s *Scheduler) updateSeriesDirectory(category string, item content.ContentI
 	}
 	if err := s.Store.UpsertSeriesDirectory(store.SeriesDirectoryEntry{
 		Category: category, ChannelID: channelID, SeriesKey: seriesKey, Title: item.Title,
-		Year: item.Year, Episode: item.EpisodeName, VideoMessageID: videoMessageID,
+		Year: item.Year, Remarks: item.Remarks, Completed: isCompletedSeries(item.Remarks, item.EpisodeName),
+		Episode: item.EpisodeName, VideoMessageID: videoMessageID,
 		DirectoryMsgID: directoryMessageID, Episodes: []store.SeriesDirectoryEpisode{{Episode: item.EpisodeName, EpisodeIndex: item.EpisodeIndex, VideoMessageID: videoMessageID}},
 	}); err != nil {
 		return err
 	}
-	entries, err = s.Store.SeriesDirectory(category, channelID, 80)
+	entries, err = s.Store.SeriesDirectory(category, channelID, 20)
 	if err != nil {
 		return err
 	}
@@ -925,7 +926,7 @@ func (s *Scheduler) RefreshSeriesDirectory(category string, recreate bool) error
 		return fmt.Errorf("channel is not configured for %s", category)
 	}
 	for _, channelID := range channelIDs {
-		entries, err := s.Store.SeriesDirectory(category, channelID, 80)
+		entries, err := s.Store.SeriesDirectory(category, channelID, 20)
 		if err != nil {
 			return err
 		}
@@ -981,6 +982,11 @@ func buildSeriesDirectoryText(channelID int64, entries []store.SeriesDirectoryEn
 }
 
 var episodeNumberPattern = regexp.MustCompile(`(?i)(?:第\s*)?(\d{1,4})(?:\s*[集期话]|\b)`)
+var completedSeriesPattern = regexp.MustCompile(`(?i)(?:已?完结|已?完結|已完|全集|全\s*\d{1,4}\s*集|complete(?:d)?)`)
+
+func isCompletedSeries(remarks, episode string) bool {
+	return completedSeriesPattern.MatchString(strings.TrimSpace(remarks + " " + episode))
+}
 
 func compactEpisodeLabel(name string, index int) string {
 	if match := episodeNumberPattern.FindStringSubmatch(strings.TrimSpace(name)); len(match) > 1 {
