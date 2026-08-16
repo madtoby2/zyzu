@@ -1,5 +1,5 @@
 [Unit]
-Description=ZYZU TV archive bot
+Description=ZYZU completed TV search bot
 After=network.target zyzu.service
 
 [Service]

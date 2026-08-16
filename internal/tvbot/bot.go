@@ -17,12 +17,11 @@ import (
 )
 
 type Bot struct {
-	token          string
-	category       string
-	archiveChannel int64
-	store          *store.Store
-	client         *http.Client
-	offset         int
+	token    string
+	category string
+	store    *store.Store
+	client   *http.Client
+	offset   int
 }
 
 type update struct {
@@ -50,11 +49,11 @@ type apiResponse struct {
 	Result      json.RawMessage `json:"result"`
 }
 
-func New(token, category string, archiveChannel int64, st *store.Store) *Bot {
+func New(token, category string, st *store.Store) *Bot {
 	if strings.TrimSpace(category) == "" {
 		category = "电视剧"
 	}
-	return &Bot{token: strings.TrimSpace(token), category: category, archiveChannel: archiveChannel, store: st,
+	return &Bot{token: strings.TrimSpace(token), category: category, store: st,
 		client: &http.Client{Timeout: 40 * time.Second}}
 }
 
@@ -62,10 +61,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	if b.token == "" {
 		return errors.New("TV_BOT_TOKEN is empty")
 	}
-	log.Printf("[tvbot] started category=%s archive_channel=%d", b.category, b.archiveChannel)
-	if b.archiveChannel != 0 {
-		go b.archiveLoop(ctx)
-	}
+	log.Printf("[tvbot] search bot started category=%s", b.category)
 	for ctx.Err() == nil {
 		if err := b.poll(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("[tvbot] poll: %v", err)
@@ -156,48 +152,6 @@ func (b *Bot) handleCallback(ctx context.Context, callback *callbackQuery) {
 	b.send(ctx, callback.Message.Chat.ID, text, keyboard)
 }
 
-func (b *Bot) archiveLoop(ctx context.Context) {
-	b.syncArchive(ctx)
-	ticker := time.NewTicker(2 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			b.syncArchive(ctx)
-		}
-	}
-}
-
-func (b *Bot) syncArchive(ctx context.Context) {
-	items, err := b.store.CompletedSeries(b.category, "", 50, 0)
-	if err != nil {
-		log.Printf("[tvbot] archive query: %v", err)
-		return
-	}
-	for _, item := range items {
-		channelID, messageID, syncedAt, found, err := b.store.TVBotArchiveState(item.SeriesKey)
-		if err != nil || (found && !item.UpdatedAt.After(syncedAt) && channelID == b.archiveChannel) {
-			continue
-		}
-		text, _ := renderSeries(item, 0, false)
-		if found && channelID == b.archiveChannel && messageID > 0 {
-			if err := b.edit(ctx, channelID, messageID, text); err == nil {
-				_ = b.store.SaveTVBotArchiveState(item.SeriesKey, channelID, messageID, item.UpdatedAt)
-				continue
-			}
-		}
-		newID, err := b.send(ctx, b.archiveChannel, text, nil)
-		if err != nil {
-			log.Printf("[tvbot] archive %s: %v", item.Title, err)
-			continue
-		}
-		_ = b.store.SaveTVBotArchiveState(item.SeriesKey, b.archiveChannel, newID, item.UpdatedAt)
-		log.Printf("[tvbot] archived %s message=%d", item.Title, newID)
-	}
-}
-
 func renderSeries(item store.SeriesDirectoryEntry, page int, interactive bool) (string, [][]map[string]string) {
 	const pageSize = 20
 	if page < 0 {
@@ -277,11 +231,6 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string, keyboard [][]
 	}
 	err := b.call(ctx, "sendMessage", values, &result)
 	return result.MessageID, err
-}
-
-func (b *Bot) edit(ctx context.Context, chatID int64, messageID int, text string) error {
-	values := url.Values{"chat_id": {strconv.FormatInt(chatID, 10)}, "message_id": {strconv.Itoa(messageID)}, "text": {text}, "parse_mode": {"HTML"}, "disable_web_page_preview": {"true"}}
-	return b.call(ctx, "editMessageText", values, nil)
 }
 
 func (b *Bot) answerCallback(ctx context.Context, id string) error {

@@ -194,13 +194,6 @@ func (s *Store) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_series_directory_episodes
 		ON series_directory_episodes(category, channel_id, series_key, episode_index);
-	CREATE TABLE IF NOT EXISTS tvbot_archive (
-		series_key TEXT PRIMARY KEY,
-		archive_channel_id INTEGER NOT NULL,
-		message_id INTEGER NOT NULL,
-		series_updated_at DATETIME NOT NULL,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
 	CREATE TABLE IF NOT EXISTS content_failures (
 		content_key TEXT PRIMARY KEY,
 		failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -431,26 +424,6 @@ func (s *Store) CompletedSeriesByPrefix(category, prefix string) (SeriesDirector
 		}
 	}
 	return SeriesDirectoryEntry{}, sql.ErrNoRows
-}
-
-func (s *Store) TVBotArchiveState(seriesKey string) (int64, int, time.Time, bool, error) {
-	var channelID int64
-	var messageID int
-	var seriesUpdated time.Time
-	err := s.db.QueryRow(`SELECT archive_channel_id, message_id, series_updated_at FROM tvbot_archive WHERE series_key=?`, seriesKey).
-		Scan(&channelID, &messageID, &seriesUpdated)
-	if err == sql.ErrNoRows {
-		return 0, 0, time.Time{}, false, nil
-	}
-	return channelID, messageID, seriesUpdated, err == nil, err
-}
-
-func (s *Store) SaveTVBotArchiveState(seriesKey string, channelID int64, messageID int, seriesUpdated time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO tvbot_archive(series_key, archive_channel_id, message_id, series_updated_at)
-		VALUES (?, ?, ?, ?) ON CONFLICT(series_key) DO UPDATE SET archive_channel_id=excluded.archive_channel_id,
-		message_id=excluded.message_id, series_updated_at=excluded.series_updated_at, updated_at=CURRENT_TIMESTAMP`,
-		seriesKey, channelID, messageID, seriesUpdated)
-	return err
 }
 
 func NextScheduledRun(scheduleType string, intervalMinutes int, dailyTime string, after time.Time) time.Time {
