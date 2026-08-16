@@ -1,0 +1,18 @@
+[Unit]
+Description=ZYZU TV archive bot
+After=network-online.target zyzu.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zyzu
+ExecStart=/usr/local/bin/zyzu-tvbot
+Environment=ZYZU_DB=/opt/zyzu/zyzu.db
+Environment=TV_BOT_CATEGORY=电视剧
+EnvironmentFile=-/etc/zyzu/tvbot.env
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
