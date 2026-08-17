@@ -62,6 +62,9 @@ func (b *Bot) Run(ctx context.Context) error {
 		return errors.New("TV_BOT_TOKEN is empty")
 	}
 	log.Printf("[tvbot] search bot started category=%s", b.category)
+	if err := b.configureProfile(ctx); err != nil {
+		log.Printf("[tvbot] configure profile: %v", err)
+	}
 	for ctx.Err() == nil {
 		if err := b.poll(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("[tvbot] poll: %v", err)
@@ -96,7 +99,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *message) {
 	text := strings.TrimSpace(msg.Text)
 	switch {
 	case text == "/start" || text == "/help":
-		b.send(ctx, msg.Chat.ID, "<b>📺 电视剧档案馆</b>\n\n/recent — 最近完结\n/search 剧名 — 搜索电视剧", nil)
+		b.send(ctx, msg.Chat.ID, "<b>📺 电视剧搜索助手</b>\n\n这里可以搜索已经完结的电视剧，并查看每一集的视频链接。\n\n直接发送剧名即可搜索，也可以使用：\n/recent — 查看最近完结\n/search 剧名 — 搜索指定电视剧\n/help — 查看使用说明\n\n连载中的电视剧仍在频道目录中更新，完结后会进入这里查询。", nil)
 	case text == "/recent":
 		b.sendSeriesList(ctx, msg.Chat.ID, "最近完结", "")
 	case strings.HasPrefix(text, "/search"):
@@ -111,6 +114,22 @@ func (b *Bot) handleMessage(ctx context.Context, msg *message) {
 			b.sendSeriesList(ctx, msg.Chat.ID, "搜索结果", text)
 		}
 	}
+}
+
+func (b *Bot) configureProfile(ctx context.Context) error {
+	if err := b.call(ctx, "setMyShortDescription", url.Values{"short_description": {"搜索完结电视剧，按剧名查看分集视频链接"}}, nil); err != nil {
+		return err
+	}
+	if err := b.call(ctx, "setMyDescription", url.Values{"description": {"📺 电视剧搜索助手\n\n搜索已完结电视剧，查看完整剧集和分集视频链接。\n\n使用方法：\n直接发送剧名，或使用 /search 剧名\n/recent 查看最近完结\n/help 查看帮助"}}, nil); err != nil {
+		return err
+	}
+	commands, _ := json.Marshal([]map[string]string{
+		{"command": "start", "description": "开始使用电视剧搜索助手"},
+		{"command": "recent", "description": "查看最近完结电视剧"},
+		{"command": "search", "description": "搜索电视剧"},
+		{"command": "help", "description": "查看使用说明"},
+	})
+	return b.call(ctx, "setMyCommands", url.Values{"commands": {string(commands)}}, nil)
 }
 
 func (b *Bot) sendSeriesList(ctx context.Context, chatID int64, heading, query string) {
