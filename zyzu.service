@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=zyzu
+User=root
 WorkingDirectory=/opt/zyzu
 ExecStart=/opt/zyzu/zyzu_linux
 Restart=always
