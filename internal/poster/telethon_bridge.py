@@ -159,7 +159,10 @@ async def send_video_with_cover(client, entity, cover_path, thumb_path, video_pa
 
 async def main():
     req = json.loads(sys.stdin.read())
-    session = os.environ.get('ZYZU_TELETHON_SESSION', 'telethon')
+    # Use one absolute session path for web login and scheduler uploads.
+    # A relative path can resolve differently under root/manual calls versus
+    # the zyzu systemd service and appear to lose authorization.
+    session = os.environ.get('ZYZU_TELETHON_SESSION', '/opt/zyzu/telethon')
     client = TelegramClient(session, int(os.environ.get('ZYZU_API_ID', '11535358')), os.environ.get('ZYZU_API_HASH', '33d372962fadb01df47e6ceed4e33cd6'))
     await client.connect()
     if req.get('action') == 'status':

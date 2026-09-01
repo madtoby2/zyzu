@@ -11,6 +11,7 @@ Restart=always
 RestartSec=10
 Environment=ZYZU_ADDR=:8080
 Environment=ZYZU_DB=/opt/zyzu/zyzu.db
+Environment=ZYZU_TELETHON_SESSION=/opt/zyzu/telethon
 
 [Install]
 WantedBy=multi-user.target
