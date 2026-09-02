@@ -39,6 +39,7 @@ body{background:linear-gradient(135deg,#24102f 0%,#5b174f 52%,#b52f72 100%);colo
 .btn-p{background:#ec4899;color:#fff}.btn-p:hover{background:#db2777}
 .btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
 .btn-r{background:#ef4444;color:#fff}.btn-r:hover{background:#dc2626}
+.telethon-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.telethon-actions .btn{min-width:120px}.telethon-status{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:999px;background:#29293d;border:1px solid #4b4b63;color:#c4c7d2;font-size:12px}.telethon-status.ok{background:#064e3b;border-color:#10b981;color:#a7f3d0}.telethon-status.err{background:#7f1d1d;border-color:#ef4444;color:#fecaca}.telethon-status.loading{background:#78350f;border-color:#f59e0b;color:#fde68a}
  .btn-o{background:transparent;border:1px solid #4b4b63;color:#c4c7d2;font-size:11px;padding:4px 8px}.btn-o:hover{background:#29293d;color:#fff}
  .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2b2b3e}
  .tab{background:none;border:none;color:#a4a7b5;padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent}
@@ -129,9 +130,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
       <label>Telethon 手机号<input id="telethon-phone" placeholder="+8613812345678"></label>
       <label>登录验证码<input id="telethon-code" placeholder="收到的验证码"></label>
       <label>两步验证密码<input id="telethon-password" type="password"></label>
-      <button class="btn btn-o" onclick="telethonRequestCode()">请求验证码</button>
-      <button class="btn btn-g" onclick="telethonLogin()">登录 Telethon</button>
-      <span id="telethon-status" class="info">未检查</span>
+      <div class="telethon-actions"><button id="telethon-request-btn" class="btn btn-p" onclick="telethonRequestCode()">请求验证码</button><button id="telethon-login-btn" class="btn btn-p" onclick="telethonLogin()">登录 Telethon</button><button id="telethon-check-btn" class="btn btn-o" onclick="telethonStatus()">检查状态</button><span id="telethon-status" class="telethon-status">未检查</span></div>
       <label>Bot Token<input id="cfg-token"></label>
       <label>采集计划<input id="cfg-scrape"></label>
       <label>内容计划<input id="cfg-content-cron"></label>
@@ -427,9 +426,10 @@ async function saveConfig(){
     ,video_formats:videoFormats
   });
 }
-async function telethonRequestCode(){const phone=document.getElementById('telethon-phone').value.trim();if(!phone){addLog('err','请输入手机号');return}await api('/api/telethon/request-code','POST',{phone});}
-async function telethonLogin(){const phone=document.getElementById('telethon-phone').value.trim(),code=document.getElementById('telethon-code').value.trim(),password=document.getElementById('telethon-password').value;if(!phone||!code){addLog('err','请输入手机号和验证码');return}await api('/api/telethon/login','POST',{Phone:phone,Code:code,Password:password});telethonStatus();}
-async function telethonStatus(){try{const r=await fetch(server+'/api/telethon/status',{headers:{'X-API-Key':key}}).then(r=>r.json());document.getElementById('telethon-status').textContent=r.ok?'已授权':'未授权'}catch(e){document.getElementById('telethon-status').textContent='检查失败'}}
+function setTelethonState(text,kind=''){const el=document.getElementById('telethon-status');if(!el)return;el.textContent=text;el.className='telethon-status'+(kind?' '+kind:'')}
+async function telethonRequestCode(){const phone=document.getElementById('telethon-phone').value.trim();if(!phone){setTelethonState('请输入手机号','err');showToast('请输入手机号','err');return}setTelethonState('请求中…','loading');try{await api('/api/telethon/request-code','POST',{phone});setTelethonState('验证码已发送','ok');showToast('验证码已发送，请填写后登录','ok')}catch(e){setTelethonState('请求失败','err');showToast('验证码请求失败：'+e.message,'err')}}
+async function telethonLogin(){const phone=document.getElementById('telethon-phone').value.trim(),code=document.getElementById('telethon-code').value.trim(),password=document.getElementById('telethon-password').value;if(!phone||!code){setTelethonState('信息不完整','err');showToast('请输入手机号和验证码','err');return}setTelethonState('登录中…','loading');try{await api('/api/telethon/login','POST',{Phone:phone,Code:code,Password:password});await telethonStatus()}catch(e){setTelethonState('登录失败','err');showToast('Telethon 登录失败：'+e.message,'err')}}
+async function telethonStatus(){try{const r=await fetch(server+'/api/telethon/status',{headers:{'X-API-Key':key}}).then(r=>r.json());if(r.ok){setTelethonState('已授权','ok');showToast('Telethon 已授权','ok')}else{setTelethonState('未授权','err')}}catch(e){setTelethonState('检查失败','err');showToast('状态检查失败：'+e.message,'err')}}
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('[id^="tab-"]').forEach(t=>t.classList.add('hidden'));
