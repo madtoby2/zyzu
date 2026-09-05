@@ -3,6 +3,7 @@ package captionai
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,11 +17,20 @@ type Client struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+	Session string
 	HTTP    *http.Client
 }
 
 func New(baseURL, apiKey, model string) *Client {
-	return &Client{BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), APIKey: strings.TrimSpace(apiKey), Model: strings.TrimSpace(model), HTTP: &http.Client{Timeout: 20 * time.Second}}
+	return &Client{BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), APIKey: strings.TrimSpace(apiKey), Model: strings.TrimSpace(model), Session: newSessionID(), HTTP: &http.Client{Timeout: 20 * time.Second}}
+}
+
+func newSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("zyzu-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 func (c *Client) Enabled() bool {
@@ -51,6 +61,8 @@ func (c *Client) Generate(ctx context.Context, item content.ContentItem, categor
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	// OpenCode Go requires this header for request/session attribution.
+	req.Header.Set("x-opencode-session", c.Session)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
