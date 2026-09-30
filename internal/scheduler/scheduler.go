@@ -498,6 +498,30 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 		return
 	}
 
+	// Fetch each due channel from its own categorized source pool as well.
+	// The global pool is useful for throughput, but a dead source can consume
+	// the category quota before a healthy adult/movie/TV source is considered.
+	// The preview endpoint already uses this strategy; background delivery must
+	// use it too so a channel cannot appear empty while preview has candidates.
+	for _, category := range dueCategories {
+		categorySources := make([]store.Station, 0)
+		for _, source := range activeSources {
+			if stationCategoryMatches(category, source.Category) {
+				categorySources = append(categorySources, source)
+			}
+		}
+		if len(categorySources) == 0 {
+			continue
+		}
+		categoryAgg := content.NewPreview(selectContentSources(categorySources, s.Cfg, 0, 6), category)
+		categoryItems, categoryErr := categoryAgg.FetchLatest()
+		if categoryErr != nil {
+			log.Printf("[content] category=%s dedicated fetch: %v", category, categoryErr)
+			continue
+		}
+		items = append(items, categoryItems...)
+	}
+
 	// Keep this state in SQLite so a later cron run (or a process restart)
 	// cannot upload the same source item again.
 	filtered := items[:0]
