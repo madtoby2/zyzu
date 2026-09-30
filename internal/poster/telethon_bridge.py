@@ -12,6 +12,15 @@ class UploadProgress:
         self.file_path = file_path
         self.started = time.monotonic()
         self.last_emit = 0.0
+        self.status_path = file_path + '.upload.json'
+        atexit.register(self.clear_status)
+
+    def clear_status(self):
+        for path in (self.status_path, self.status_path + '.tmp'):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def __call__(self, *args, **kwargs):
         done = kwargs.get('done', args[0] if args else 0) or 0
@@ -20,6 +29,12 @@ class UploadProgress:
         if done < total and now - self.last_emit < 5:
             return
         self.last_emit = now
+        try:
+            with open(self.status_path + '.tmp', 'w', encoding='utf-8') as status:
+                json.dump({'done': int(done), 'total': int(total)}, status)
+            os.replace(self.status_path + '.tmp', self.status_path)
+        except OSError:
+            pass
         elapsed = max(now - self.started, 0.001)
         speed = done / elapsed
         percent = done * 100 / total if total else 0

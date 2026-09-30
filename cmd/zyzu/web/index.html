@@ -84,7 +84,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 <div class="app" id="app">
   <div class="topbar">
     <div><h1>📡 ZYZU</h1><div class="server" id="app-server">-</div></div>
-    <div><button onclick="openMonitor()">监控</button> <button onclick="logout()">断开</button></div>
+    <div><button class="btn btn-o" onclick="openStorage()">磁盘与清理</button> <button onclick="openMonitor()">监控</button> <button onclick="logout()">断开</button></div>
   </div>
   <div class="grid">
     <div class="card"><div class="n" id="s-total">-</div><div class="l">总站点</div></div>
@@ -170,6 +170,12 @@ table{width:100%;border-collapse:collapse;font-size:12px}
     <div class="modal-actions"><button class="btn btn-o" onclick="closeScheduledModal()">取消</button><button class="btn btn-p" onclick="saveScheduledMessage()">保存</button></div>
   </div>
 </div>
+<div class="modal hidden" id="storage-modal" onclick="if(event.target===this)closeStorage()">
+  <div class="modal-panel"><div class="modal-head"><h3>磁盘与清理</h3><button class="modal-close" onclick="closeStorage()">×</button></div>
+    <div id="storage-body">正在读取…</div>
+    <div class="modal-actions"><button class="btn btn-o" onclick="openStorage()">刷新预览</button><button id="storage-clean" class="btn btn-p" disabled onclick="cleanStorage()">清理上述过期缓存</button></div>
+  </div>
+</div>
 <div class="modal hidden" id="monitor-modal" onclick="if(event.target===this)closeMonitor()">
   <div class="modal-panel"><div class="modal-head"><h3>运行监控</h3><button class="modal-close" onclick="closeMonitor()">×</button></div>
     <div id="monitor-body"><div class="empty-detail">正在读取...</div></div>
@@ -248,7 +254,34 @@ async function loadConfig(){
 function defaultChannelInterval(category){if(['成人','adult','AV','av'].includes(category))return 15;if(['电视剧','电视','tv'].includes(category))return 30;if(['电影','movie'].includes(category))return 60;return 30}
 function defaultChannelPolicy(category){const c=String(category||'').toLowerCase();if(['成人','adult','av'].includes(c))return{paused:false,per_run_limit:3,per_series_limit:1,allow_series:false};if(['电影','movie'].includes(c))return{paused:false,per_run_limit:1,per_series_limit:1,allow_series:false};if(['电视剧','电视','tv','动漫','anime','综艺','variety','纪录片','documentary'].includes(c))return{paused:false,per_run_limit:2,per_series_limit:3,allow_series:true};return{paused:false,per_run_limit:2,per_series_limit:2,allow_series:true}}
 function channelPolicy(category){return Object.assign(defaultChannelPolicy(category),channelPolicies[category]||{})}
-function channelJobText(category){const j=channelJobs[category];if(!j)return '等待调度';const labels={queued:'等待处理',downloading:'正在下载',uploading:'正在上传',retrying:'正在换源',completed:'最近完成',failed:'本轮失败'};const size=j.size_mb?` · ${Number(j.size_mb).toFixed(0)}MB`:'';return `${labels[j.state]||j.state}《${j.title||'未知资源'}》 · ${j.source||'未知来源'}${size}`}
+function channelJobText(category){const j=channelJobs[category];if(!j)return '等待调度';const labels={idle:'等待检查',paused:'已暂停',unbound:'未配置频道',queued:'等待处理',downloading:'正在下载',uploading:'正在上传',retrying:'正在重试',completed:'最近完成',failed:'本轮失败'};return `${labels[j.state]||j.state}${j.title?'《'+j.title+'》':''}${j.source?' · '+j.source:''}`}
+const transferSamples=new Map();
+function jobProgress(cat,j){
+  if(!['downloading','uploading'].includes(j.state))return '';
+  const now=Date.now(),done=Number(j.done_bytes||0),sample=transferSamples.get(cat),identity=[j.key,j.state,j.updated_at].join('|');
+  const speed=sample&&sample.identity===identity&&now>sample.time?Math.max(0,(done-sample.done)/((now-sample.time)/1000)):null;
+  transferSamples.set(cat,{identity,time:now,done});
+  const percent=j.progress_known&&j.total_bytes>0?Math.min(100,done/j.total_bytes*100):null;
+  return `<div style="margin:10px 0"><progress ${percent===null?'':`value="${percent}"`} max="100" style="width:100%;accent-color:#d66adf"></progress></div><div class="meta">${percent===null?'总大小未知':percent.toFixed(1)+'%'} · 已传输 ${formatBytes(done)}${j.total_bytes?' / '+formatBytes(j.total_bytes):''}<br>${speed===null?'速度采样中':formatBytes(speed)+'/秒'} · 已运行 ${Math.floor((j.elapsed_seconds||0)/60)} 分钟${percent===100?' · 等待 Telegram 确认':''}</div>`;
+}
+function formatBytes(n){n=Number(n||0);return n>=1073741824?(n/1073741824).toFixed(2)+' GiB':(n/1048576).toFixed(1)+' MiB'}
+let storageBusy=false;
+function closeStorage(){document.getElementById('storage-modal').classList.add('hidden')}
+async function openStorage(){
+  if(storageBusy)return;
+  document.getElementById('storage-modal').classList.remove('hidden');
+  const el=document.getElementById('storage-body'),button=document.getElementById('storage-clean');button.disabled=true;el.textContent='正在检查磁盘与过期缓存…';
+  try{const response=await fetch(server+'/api/storage',{headers:{'X-API-Key':key}});const r=await response.json();if(!response.ok||!r.ok)throw new Error(r.error||'读取失败');const s=r.data,d=s.disk||{};
+    const active=Object.values(channelJobs).filter(j=>['downloading','uploading'].includes(j.state));
+    el.innerHTML=`<div class="detail-grid"><div class="detail-item"><small>磁盘可用 / 总量</small><b>${d.ok?Number(d.available_gb).toFixed(1)+' / '+Number(d.total_gb).toFixed(1)+' GiB':'读取失败'}</b></div><div class="detail-item"><small>视频临时文件（含正在处理）</small><b>${formatBytes(s.sizes.video)}</b></div><div class="detail-item"><small>脚本临时目录</small><b>${formatBytes(s.sizes.scripts)}</b></div><div class="detail-item"><small>每小时自动清理</small><b>${String(s.timer).trim()==='active'?'已启用':'未启用'}</b></div></div><div class="detail-section"><h4>当前传输</h4>${active.length?active.map(j=>`<div class="detail-row">${esc(j.title)} · ${j.state==='uploading'?'上传中':'下载中'}</div>`).join(''):'暂无正在传输的任务'}</div><p>视频保留 48 小时，游戏缓存保留 7 天；最近变动或仍被进程使用的文件会跳过。此处仅清理临时缓存，不清理数据库和登录会话。</p><h4>可清理清单</h4><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto">${esc(s.error||s.preview||'暂无过期缓存')}</pre><h4>最近自动清理记录</h4><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">${esc(s.history||'暂无记录')}</pre>${s.scan_errors?.length?'<p>'+esc(s.scan_errors.join('；'))+'</p>':''}`;
+    button.disabled=!s.cleanup_available||!String(s.preview).includes('CANDIDATE');
+  }catch(e){el.textContent='读取失败：'+e.message;showToast(el.textContent,'err')}
+}
+async function cleanStorage(){
+  if(storageBusy||!confirm('确认删除清单中的过期临时文件？删除后需重新下载。执行时会再次检查是否正在使用。'))return;
+  storageBusy=true;const button=document.getElementById('storage-clean');button.disabled=true;button.textContent='正在清理…';
+  try{const response=await fetch(server+'/api/storage/cleanup',{method:'POST',headers:{'X-API-Key':key}});const r=await response.json();if(!response.ok||!r.ok)throw new Error(r.error||'请求失败');showToast('过期缓存清理完成','ok');addLog('ok',r.data.result,false)}catch(e){showToast('清理失败：'+e.message,'err');addLog('err','清理失败：'+e.message,false)}finally{storageBusy=false;button.textContent='清理上述过期缓存';await openStorage()}
+}
 function renderChannelJobBoard(){
   const el=document.getElementById('channel-job-board');if(!el)return;
   const cats=Object.keys(channelMap||{});
@@ -259,7 +292,7 @@ function renderChannelJobBoard(){
     const cls=state==='failed'?'red':(state==='completed'?'green':'');
     const ids=(channelMap[cat]||[]).length,p=channelPolicy(cat);
     const bound=stations.filter(s=>(s.category||'综合影视')===cat).length;
-    return `<div class="job-card"><h4>${esc(cat)} · ${ids} 个频道${p.paused?' · 已暂停':''}</h4><div class="state ${cls}">${esc(channelJobText(cat))}</div><div class="meta">绑定资源站 ${bound} 个 · 每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查 · 每轮 ${p.per_run_limit} 条</div></div>`;
+    return `<div class="job-card"><h4>${esc(cat)} · ${ids} 个频道${p.paused?' · 已暂停':''}</h4><div class="state ${cls}">${esc(channelJobText(cat))}</div>${j.episode?'<div class="meta">'+esc(j.episode)+'</div>':''}${jobProgress(cat,j)}${j.reason?'<div class="detail-row">'+esc(j.reason)+'</div>':''}<div class="meta">${j.next_check&&!j.next_check.startsWith('0001')?'最早下次检查：'+esc(new Date(j.next_check).toLocaleString()):'检查时间由调度器决定'}<br>同分类资源站 ${bound} 个 · 每 ${channelIntervals[cat]||defaultChannelInterval(cat)} 分钟检查 · 每轮 ${p.per_run_limit} 条</div></div>`;
   }).join('');
 }
 function refreshChannelCategories(){const el=document.getElementById('channel-category');if(!el)return;const current=el.value;const values=['成人','综合影视','电影','电视剧','动漫','综艺','纪录片',...Object.keys(channelMap||{}),...stations.map(s=>s.category||'')].filter(Boolean);const unique=[...new Set(values)];el.innerHTML=unique.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(unique.includes(current))el.value=current}

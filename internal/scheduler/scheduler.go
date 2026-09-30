@@ -4,6 +4,7 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log"
 	urlpkg "net/url"
@@ -55,15 +56,22 @@ type Scheduler struct {
 }
 
 type ChannelJobStatus struct {
-	State     string    `json:"state"`
-	Title     string    `json:"title"`
-	Source    string    `json:"source"`
-	SizeMB    float64   `json:"size_mb,omitempty"`
-	Key       string    `json:"key,omitempty"`
-	Episode   string    `json:"episode,omitempty"`
-	Index     int       `json:"episode_index,omitempty"`
-	Total     int       `json:"episode_total,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Reason        string    `json:"reason,omitempty"`
+	NextCheck     time.Time `json:"next_check,omitempty"`
+	Elapsed       float64   `json:"elapsed_seconds,omitempty"`
+	DoneBytes     int64     `json:"done_bytes,omitempty"`
+	TotalBytes    int64     `json:"total_bytes,omitempty"`
+	ProgressKnown bool      `json:"progress_known"`
+	File          string    `json:"-"`
+	State         string    `json:"state"`
+	Title         string    `json:"title"`
+	Source        string    `json:"source"`
+	SizeMB        float64   `json:"size_mb,omitempty"`
+	Key           string    `json:"key,omitempty"`
+	Episode       string    `json:"episode,omitempty"`
+	Index         int       `json:"episode_index,omitempty"`
+	Total         int       `json:"episode_total,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type ContentPreview struct {
@@ -283,6 +291,45 @@ func (s *Scheduler) Status() map[string]interface{} {
 	for category, job := range s.channelJobs {
 		channelJobs[category] = job
 	}
+	for category, ids := range s.Cfg.ChannelMap {
+		job := channelJobs[category]
+		if s.categoryRuns[category] {
+			job.Elapsed = time.Since(job.UpdatedAt).Seconds()
+			if job.File != "" && job.State == "downloading" {
+				job.DoneBytes = fileSize(job.File + ".part.mp4")
+			}
+			if job.File != "" && job.State == "uploading" {
+				var progress struct {
+					Done  int64 `json:"done"`
+					Total int64 `json:"total"`
+				}
+				if data, err := os.ReadFile(job.File + ".upload.json"); err == nil && json.Unmarshal(data, &progress) == nil {
+					job.DoneBytes, job.TotalBytes = progress.Done, progress.Total
+					job.ProgressKnown = progress.Total > 0
+				}
+			}
+		} else {
+			job.NextCheck = s.categoryLast[category].Add(time.Duration(s.Cfg.ChannelIntervalMinutes(category)) * time.Minute)
+			if s.categoryLast[category].IsZero() || job.NextCheck.Before(time.Now()) {
+				job.NextCheck = time.Time{}
+			}
+			if job.Reason == "" {
+				job.Reason = "等待下一次检查"
+			}
+			if job.State == "" {
+				job.State = "idle"
+			}
+		}
+		if s.Cfg.ChannelPolicy(category).Paused {
+			job.State, job.Reason = "paused", "频道已暂停，请在频道设置恢复"
+			job.NextCheck = time.Time{}
+		}
+		if len(ids) == 0 {
+			job.State, job.Reason = "unbound", "尚未设置接收频道"
+			job.NextCheck = time.Time{}
+		}
+		channelJobs[category] = job
+	}
 	return map[string]interface{}{
 		"running":         s.running || anyContentRunning,
 		"scrape_running":  s.running,
@@ -414,6 +461,7 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 
 	allSources, err := content.GetActiveSources(s.Store, 0)
 	if err != nil {
+		s.setChannelReasons(dueCategories, "failed", "读取资源站失败："+compactError(err))
 		log.Printf("[scheduler] get sources: %v", err)
 		return
 	}
@@ -435,12 +483,18 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 	// what the corresponding channel actually receives.
 	sources := selectContentSources(activeSources, s.Cfg, 5, 2)
 	if len(sources) == 0 {
+		s.setChannelReasons(dueCategories, "idle", "没有可用资源站：请检查分类、屏蔽和失败冷却状态")
 		return
 	}
 
 	s.Agg = content.New(sources)
 	items, err := s.Agg.FetchLatest()
 	if err != nil || len(items) == 0 {
+		reason := "资源站未返回候选资源"
+		if err != nil {
+			reason = "读取候选资源失败：" + compactError(err)
+		}
+		s.setChannelReasons(dueCategories, "idle", reason)
 		return
 	}
 
@@ -489,6 +543,7 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 	})
 
 	if len(filtered) == 0 {
+		s.setChannelReasons(dueCategories, "idle", "本轮资源均已推送、手动跳过或正在失败冷却")
 		log.Printf("[scheduler] content: no new items")
 		return
 	}
@@ -499,6 +554,7 @@ func (s *Scheduler) runContentCategories(force bool, onlyCategories []string) {
 		policy := s.Cfg.ChannelPolicy(category)
 		candidates := selectCategoryCandidates(filtered, category, policy.PerRunLimit, claimed)
 		if len(candidates) == 0 {
+			s.setChannelReasons([]string{category}, "idle", "本轮没有符合频道分类的新资源")
 			log.Printf("[scheduler] channel=%s: no new matching item", category)
 			continue
 		}
@@ -605,13 +661,15 @@ func selectCategoryCandidates(items []content.ContentItem, category string, limi
 func (s *Scheduler) runContentCategory(mode, category string, items []content.ContentItem) {
 	posted := 0
 	defer func() {
-		s.Video.Cleanup(30)
 		s.mu.Lock()
 		s.categoryRuns[category] = false
 		s.ContentCount += posted
 		if posted == 0 {
 			job := s.channelJobs[category]
 			job.State = "failed"
+			if job.Reason == "" {
+				job.Reason = "本轮未发布：可能无可用播放线路或集数已发布，请查看资源日志"
+			}
 			job.UpdatedAt = time.Now()
 			s.channelJobs[category] = job
 		}
@@ -652,6 +710,7 @@ func (s *Scheduler) setChannelJob(category, state string, item content.ContentIt
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.channelJobs[category] = ChannelJobStatus{
+		File:      s.Video.OutputPath(videoFileName(item)),
 		State:     state,
 		Title:     item.Title,
 		Source:    item.Source,
@@ -662,6 +721,25 @@ func (s *Scheduler) setChannelJob(category, state string, item content.ContentIt
 		Total:     item.EpisodeTotal,
 		UpdatedAt: time.Now(),
 	}
+}
+
+func (s *Scheduler) setChannelReasons(categories []string, state, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, category := range categories {
+		if s.categoryRuns[category] {
+			continue
+		}
+		s.channelJobs[category] = ChannelJobStatus{State: state, Reason: reason, UpdatedAt: time.Now()}
+	}
+}
+
+func (s *Scheduler) setJobError(category string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.channelJobs[category]
+	job.Reason = compactError(err)
+	s.channelJobs[category] = job
 }
 
 func (s *Scheduler) runVideoPipeline(items []content.ContentItem) int {
@@ -766,6 +844,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 					reason := compactError(err)
 					_ = s.Store.LogEvent("err", fmt.Sprintf("视频下载失败，已跳过当前资源：%s · %s · %s", item.Source, item.Title, reason))
 				}
+				s.setJobError(category, err)
 				continue
 			}
 			downloadedSize := fileSize(filePath)
@@ -798,6 +877,7 @@ func (s *Scheduler) runVideoCategory(category string, items []content.ContentIte
 					log.Printf("[video] removed failed upload: %s", filePath)
 				}
 				s.setChannelJob(category, "retrying", episodeItem, downloadedSize)
+				s.setJobError(category, err)
 				_ = s.Store.LogContentFailure(episodeKey)
 				if !seriesMode {
 					break

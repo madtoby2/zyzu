@@ -42,6 +42,8 @@ func (h *Handler) Register(r chi.Router) {
 	// Protected write operations
 	r.Group(func(r chi.Router) {
 		r.Use(h.authMiddleware)
+		r.Get("/api/storage", h.storageStatus)
+		r.Post("/api/storage/cleanup", h.cleanupStorage)
 		r.Post("/api/stations/{slug}/blacklist", h.toggleBlacklist)
 		r.Post("/api/stations/{slug}/category", h.updateCategory)
 		r.Post("/api/stations/{slug}/probe", h.probeStation)

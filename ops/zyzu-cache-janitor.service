@@ -1,0 +1,8 @@
+[Unit]
+Description=Recover stale ZYZU and game pipeline temporary downloads
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/zyzu-cache-janitor.py --apply
+Nice=19
+IOSchedulingClass=idle

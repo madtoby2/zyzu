@@ -31,6 +31,10 @@ func New(workDir string) *Downloader {
 	return &Downloader{WorkDir: workDir, Timeout: 0, RuntimeTimeout: 6 * time.Hour, StallTimeout: 3 * time.Minute}
 }
 
+func (d *Downloader) OutputPath(filename string) string {
+	return filepath.Join(d.WorkDir, sanitize(filename)+".full.mp4")
+}
+
 // HasComplete reports whether a fully finalized file can be resumed for upload.
 func (d *Downloader) HasComplete(filename string) bool {
 	path := filepath.Join(d.WorkDir, sanitize(filename)+".full.mp4")
